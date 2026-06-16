@@ -40,7 +40,7 @@ class RecentUploadsList extends StatelessWidget {
         final sizeStr = doc.sizeLabel;
         final timeStr = DateUtilsHelper.getRelativeTime(doc.addedAt);
 
-        // Derive tag and tagColor
+        // Derive tag and tagColor locally as they aren't part of the Document model
         String tag = doc.type.name.toUpperCase();
         Color tagColor = iconFg;
         
@@ -58,7 +58,7 @@ class RecentUploadsList extends StatelessWidget {
               // Set session to this doc and switch to tutor
               sessionProvider.updateActiveSession(
                 doc.name,
-                '${doc.sizeLabel} · Socratic Context Active',
+                '$sizeStr · Socratic Context Active',
               );
               navProvider.setIndex(1); // switch to tutor
               ScaffoldMessenger.of(context).showSnackBar(
