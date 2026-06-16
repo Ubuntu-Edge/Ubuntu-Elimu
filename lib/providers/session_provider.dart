@@ -24,8 +24,8 @@ class SessionProvider with ChangeNotifier {
   String get activeSessionTitle => _activeSessionTitle;
   String get activeSessionMeta => _activeSessionMeta;
 
-  void toggleOffline(bool value) {
-    _isOffline = value;
+  void toggleOffline() {
+    _isOffline = !_isOffline;
     notifyListeners();
   }
 

@@ -34,9 +34,7 @@ class MainShell extends StatelessWidget {
                   children: [
                     _StatusBar(
                       isOffline: sessionProvider.isOffline,
-                      onToggleOffline: () {
-                        sessionProvider.toggleOffline(!sessionProvider.isOffline);
-                      },
+                      onToggleOffline: sessionProvider.toggleOffline,
                     ),
                     Expanded(
                       child: IndexedStack(
@@ -207,6 +205,7 @@ class _BottomNav extends StatelessWidget {
     _BottomNavItem(icon: Icons.folder_copy_outlined, label: 'Library'),
     _BottomNavItem(icon: Icons.menu_book_outlined, label: 'Exam'),
     _BottomNavItem(icon: Icons.travel_explore_rounded, label: 'Research'),
+    _BottomNavItem(icon: Icons.settings_outlined, label: 'Settings'),
   ];
 
   const _BottomNav({
