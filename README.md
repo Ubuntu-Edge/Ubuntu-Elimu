@@ -39,6 +39,43 @@ Ubuntu Elimu executes the entire document extraction, embedding, vector storage,
 - Hardware-optimized inference and streaming
 ```
 
+## 🛠️ Tech Stack
+
+*   **Frontend:** [Flutter](https://flutter.dev/) (Multi-platform)
+*   **UI Design:** Custom Dark Theme with Space Grotesk & Inter typography.
+*   **Local Inference:** [MediaPipe LLM Inference](https://developers.google.com/mediapipe/solutions/genai/llm_inference) / [llama.cpp](https://github.com/ggerganov/llama.cpp) (GGUF support).
+*   **Vector Database:** [sqlite-vec](https://github.com/asg017/sqlite-vec) for high-performance edge similarity search.
+*   **Embeddings:** BGE-micro-v2 (quantized) for semantic understanding.
+*   **State Management:** Riverpod.
+
+## 📦 Getting Started
+
+### Prerequisites
+*   Flutter SDK (stable)
+*   Android NDK (for native library support)
+*   Minimum 4GB RAM on target device for 1B/3B model inference.
+
+### Installation
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/your-org/ubuntu-elimu.git
+    cd ubuntu-elimu
+    ```
+2.  **Install dependencies:**
+    ```bash
+    flutter pub get
+    ```
+3.  **Setup Models:**
+    Place your quantized GGUF models in the `assets/models/` directory as specified in the configuration.
+4.  **Run the application:**
+    ```bash
+    flutter run --release
+    ```
+
 ## 🤝 Contributing
 
 We welcome educational researchers, edge AI developers, and hardware enthusiasts to join us in building an open-source educational standard for offline learning. Please read our `CONTRIBUTING.md` guidelines for detailing security sandboxes, hardware testing protocols, and local translation alignment pipelines.
+
+## 📄 License
+
+This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENSE) file for details.
