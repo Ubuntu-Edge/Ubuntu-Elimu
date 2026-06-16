@@ -7,6 +7,7 @@ import '../../../../core/utils/date_utils.dart';
 import '../../../../providers/document_provider.dart';
 import '../../../../providers/navigation_provider.dart';
 import '../../../../providers/session_provider.dart';
+import '../../../../models/document.dart';
 
 class RecentUploadsList extends StatelessWidget {
   const RecentUploadsList({super.key});
@@ -33,11 +34,22 @@ class RecentUploadsList extends StatelessWidget {
 
     return Column(
       children: recents.map((doc) {
-        final iconBg = FileUtils.getIconBg(doc.fileType);
-        final iconFg = FileUtils.getIconFg(doc.fileType);
-        final icon = FileUtils.getIcon(doc.fileType);
-        final sizeStr = FileUtils.formatBytes(doc.sizeBytes);
-        final timeStr = DateUtilsHelper.getRelativeTime(doc.uploadTime);
+        final iconBg = FileUtils.getIconBg(doc.type);
+        final iconFg = FileUtils.getIconFg(doc.type);
+        final icon = FileUtils.getIcon(doc.type);
+        final sizeStr = doc.sizeLabel;
+        final timeStr = DateUtilsHelper.getRelativeTime(doc.addedAt);
+
+        // Derive tag and tagColor
+        String tag = doc.type.name.toUpperCase();
+        Color tagColor = iconFg;
+        
+        if (doc.flashcardCount != null && doc.flashcardCount! > 0) {
+          tag = '${doc.flashcardCount} cards';
+        } else if (DateTime.now().difference(doc.addedAt).inHours < 24) {
+          tag = 'New';
+          tagColor = UEColors.accent;
+        }
 
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
@@ -46,7 +58,7 @@ class RecentUploadsList extends StatelessWidget {
               // Set session to this doc and switch to tutor
               sessionProvider.updateActiveSession(
                 doc.name,
-                '${FileUtils.formatBytes(doc.sizeBytes)} · Socratic Context Active',
+                '${doc.sizeLabel} · Socratic Context Active',
               );
               navProvider.setIndex(1); // switch to tutor
               ScaffoldMessenger.of(context).showSnackBar(
@@ -109,11 +121,11 @@ class RecentUploadsList extends StatelessWidget {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      doc.tag,
+                      tag,
                       style: UETypography.inter(
                         fontSize: 10,
                         fontWeight: FontWeight.w500,
-                        color: doc.tagColor,
+                        color: tagColor,
                       ),
                     ),
                   ),

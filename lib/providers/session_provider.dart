@@ -15,12 +15,23 @@ class SessionProvider with ChangeNotifier {
   bool _isOffline = true;
   bool _isGenerating = false;
 
+  String _activeSessionTitle = 'Organic Chemistry — Ch.7';
+  String _activeSessionMeta = '45 min ago · Power mode · EN→SW';
+
   List<ChatMessage> get chatMessages => _chatMessages;
   bool get isOffline => _isOffline;
   bool get isGenerating => _isGenerating;
+  String get activeSessionTitle => _activeSessionTitle;
+  String get activeSessionMeta => _activeSessionMeta;
 
   void toggleOffline(bool value) {
     _isOffline = value;
+    notifyListeners();
+  }
+
+  void updateActiveSession(String title, String meta) {
+    _activeSessionTitle = title;
+    _activeSessionMeta = meta;
     notifyListeners();
   }
 
