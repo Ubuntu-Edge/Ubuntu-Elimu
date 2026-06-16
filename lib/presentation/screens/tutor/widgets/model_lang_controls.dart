@@ -1,109 +1,145 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/typography.dart';
-import '../../../../providers/settings_provider.dart';
+import '../../../../models/chat_message.dart';
 
 class ModelLangControls extends StatelessWidget {
-  const ModelLangControls({super.key});
+  final ModelMode selectedModel;
+  final Language selectedLanguage;
+  final bool socraticMode;
+  final ValueChanged<ModelMode> onModelChanged;
+  final VoidCallback onLanguageTap;
+
+  const ModelLangControls({
+    super.key,
+    required this.selectedModel,
+    required this.selectedLanguage,
+    required this.socraticMode,
+    required this.onModelChanged,
+    required this.onLanguageTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final settingsProvider = Provider.of<SettingsProvider>(context);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: const BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: UEColors.surface, width: 0.5),
+    return Row(
+      children: [
+        _ModelPill(
+          label: ModelMode.power.label,
+          active: selectedModel == ModelMode.power,
+          onTap: () => onModelChanged(ModelMode.power),
         ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // Socratic/Direct Toggle
-          GestureDetector(
-            onTap: () {
-              settingsProvider.toggleSocraticMode(!settingsProvider.socraticMode);
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: settingsProvider.socraticMode ? UEColors.iconBg : UEColors.surface,
-                border: Border.all(
-                  color: settingsProvider.socraticMode ? UEColors.accent : UEColors.border,
-                  width: 0.5,
-                ),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    TablerIcons.brain,
-                    color: settingsProvider.socraticMode ? UEColors.accent : UEColors.textMuted,
-                    size: 14,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    settingsProvider.socraticMode ? 'Socratic Mode' : 'Direct Answers',
-                    style: UETypography.inter(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      color: settingsProvider.socraticMode ? UEColors.accent : UEColors.textMuted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // Translation languages EN -> SW
+        const SizedBox(width: 8),
+        _ModelPill(
+          label: ModelMode.lite.label,
+          active: selectedModel == ModelMode.lite,
+          onTap: () => onModelChanged(ModelMode.lite),
+        ),
+        const SizedBox(width: 8),
+        _LangPill(
+          language: selectedLanguage,
+          onTap: onLanguageTap,
+        ),
+        const Spacer(),
+        if (socraticMode)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
-              color: UEColors.surface,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: UEColors.border, width: 0.5),
+              color: UEColors.onlineBg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: UEColors.onlineBorder, width: 0.5),
             ),
-            child: Row(
-              children: [
-                _buildLangBtn(context, settingsProvider.sourceLanguage, () {
-                  final newSrc = settingsProvider.sourceLanguage == 'EN' ? 'SW' : 'EN';
-                  final newTgt = settingsProvider.targetLanguage == 'EN' ? 'SW' : 'EN';
-                  settingsProvider.setLanguages(newSrc, newTgt);
-                }),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Icon(
-                    TablerIcons.arrow_narrow_right,
-                    size: 14,
-                    color: UEColors.textMuted,
-                  ),
-                ),
-                _buildLangBtn(context, settingsProvider.targetLanguage, () {
-                  final newSrc = settingsProvider.sourceLanguage == 'EN' ? 'SW' : 'EN';
-                  final newTgt = settingsProvider.targetLanguage == 'EN' ? 'SW' : 'EN';
-                  settingsProvider.setLanguages(newSrc, newTgt);
-                }),
-              ],
+            child: Text(
+              'Socratic on',
+              style: UETypography.caption.copyWith(
+                color: UEColors.online,
+                fontSize: 10,
+              ),
             ),
           ),
-        ],
+      ],
+    );
+  }
+}
+
+class _ModelPill extends StatelessWidget {
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  const _ModelPill({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+        decoration: BoxDecoration(
+          color: active ? UEColors.bgElevated : UEColors.bgCard,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: active ? UEColors.indigo : UEColors.bgBorder,
+            width: 0.5,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.memory_rounded,
+              size: 12,
+              color: active ? UEColors.indigo : UEColors.textMuted,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: UETypography.label.copyWith(
+                color: active ? UEColors.indigo : UEColors.textMuted,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
+}
 
-  Widget _buildLangBtn(BuildContext context, String code, VoidCallback onTap) {
+class _LangPill extends StatelessWidget {
+  final Language language;
+  final VoidCallback onTap;
+
+  const _LangPill({required this.language, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Text(
-        code,
-        style: UETypography.inter(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: UEColors.textPrimary,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1A2E),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: UEColors.violet, width: 0.5),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.translate_rounded, size: 12, color: UEColors.violet),
+            const SizedBox(width: 4),
+            Text(
+              'EN → ${language.label}',
+              style: UETypography.label.copyWith(
+                color: UEColors.violet,
+                fontSize: 11,
+              ),
+            ),
+          ],
         ),
       ),
     );
