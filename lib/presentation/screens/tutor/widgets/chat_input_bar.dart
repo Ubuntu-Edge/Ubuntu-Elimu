@@ -37,7 +37,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
       decoration: const BoxDecoration(
         color: UEColors.bg,
         border: Border(
-          top: BorderSide(color: UEColors.surface, width: 0.5),
+          top: const BorderSide(color: UEColors.surface, width: 0.5),
         ),
       ),
       child: SafeArea(
@@ -48,19 +48,20 @@ class _ChatInputBarState extends State<ChatInputBar> {
               onTap: () {
                 sessionProvider.clearChat();
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
+                  const SnackBar(
                     content: const Text('Conversation reset'),
                     backgroundColor: UEColors.surface,
                     duration: const Duration(seconds: 1),
                   ),
                 );
               },
+
               child: Container(
                 width: 38,
                 height: 38,
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   color: UEColors.surface,
-                  border: Border.all(color: UEColors.border, width: 0.5),
+                  border: Border.fromBorderSide(BorderSide(color: UEColors.border, width: 0.5)),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -107,7 +108,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                           ),
                         );
                       },
-                      child: Icon(
+                      child: const Icon(
                         TablerIcons.microphone,
                         color: UEColors.textMuted,
                         size: 16,
