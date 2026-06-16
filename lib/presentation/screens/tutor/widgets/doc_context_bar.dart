@@ -1,56 +1,84 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/typography.dart';
-import '../../../../providers/session_provider.dart';
+import '../../../../models/document.dart';
 
 class DocContextBar extends StatelessWidget {
-  const DocContextBar({super.key});
+  final Document? activeDoc;
+  final VoidCallback onChangeTap;
+
+  const DocContextBar({
+    super.key,
+    required this.activeDoc,
+    required this.onChangeTap,
+  });
+
+  IconData _iconForType(DocType type) {
+    switch (type) {
+      case DocType.pdf:   return Icons.picture_as_pdf_rounded;
+      case DocType.pptx:  return Icons.slideshow_rounded;
+      case DocType.docx:  return Icons.description_rounded;
+      default:            return Icons.insert_drive_file_rounded;
+    }
+  }
+
+  Color _colorForType(DocType type) {
+    switch (type) {
+      case DocType.pdf:   return UEColors.pdfColor;
+      case DocType.pptx:  return UEColors.pptxColor;
+      case DocType.docx:  return UEColors.docxColor;
+      default:            return UEColors.textMuted;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final sessionProvider = Provider.of<SessionProvider>(context);
-
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: UEColors.surface,
-        border: Border.all(color: UEColors.border, width: 0.5),
+        color: UEColors.bgCard,
         borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: UEColors.bgBorder, width: 0.5),
       ),
       child: Row(
         children: [
-          const Icon(
-            TablerIcons.sparkles,
-            color: UEColors.accent,
-            size: 16,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Active: ${sessionProvider.activeSessionTitle}',
-              overflow: TextOverflow.ellipsis,
-              style: UETypography.inter(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: UEColors.textPrimary,
+          if (activeDoc != null) ...[
+            Icon(
+              _iconForType(activeDoc!.type),
+              size: 16,
+              color: _colorForType(activeDoc!.type),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                activeDoc!.name,
+                style: UETypography.bodySm.copyWith(
+                  color: UEColors.textPrimary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-          ),
+          ] else ...[
+            const Icon(Icons.folder_open_rounded, size: 16, color: UEColors.textMuted),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'No document selected',
+                style: UETypography.bodySm.copyWith(fontSize: 12),
+              ),
+            ),
+          ],
           const SizedBox(width: 8),
           GestureDetector(
-            onTap: () {
-              sessionProvider.updateActiveSession(
-                'Organic Chemistry — Ch.7',
-                '45 min ago · Power mode · EN→SW',
-              );
-            },
-            child: const Icon(
-              TablerIcons.x,
-              color: UEColors.textMuted,
-              size: 14,
+            onTap: onChangeTap,
+            child: Text(
+              activeDoc != null ? 'Change' : 'Select',
+              style: UETypography.label.copyWith(
+                color: UEColors.indigo,
+                fontSize: 12,
+              ),
             ),
           ),
         ],
