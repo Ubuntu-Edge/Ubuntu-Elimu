@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../../core/theme/colors.dart';
-import '../../../core/theme/typography.dart';
 import 'widgets/topic_input_form.dart';
 import 'widgets/report_output_view.dart';
 

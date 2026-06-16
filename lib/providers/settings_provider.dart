@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 class SettingsProvider with ChangeNotifier {
@@ -10,7 +11,7 @@ class SettingsProvider with ChangeNotifier {
   bool _isModelDownloaded = false;
   bool _isDownloading = false;
   double _downloadProgress = 0.0;
-  String _modelName = 'Socratic-Mini-7B-Quantized (1.4 GB)';
+  final String _modelName = 'Socratic-Mini-7B-Quantized (1.4 GB)';
 
   bool get socraticMode => _socraticMode;
   bool get powerMode => _powerMode;

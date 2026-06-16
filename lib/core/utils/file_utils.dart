@@ -50,10 +50,6 @@ class FileUtils {
   static String formatBytes(int bytes, {int decimals = 1}) {
     if (bytes <= 0) return "0 B";
     const suffixes = ["B", "KB", "MB", "GB", "TB"];
-    var i = (bytes == 0) ? 0 : (bytes.toString().length - 1) / 3;
-    var index = i.floor();
-    var val = bytes / (1000 * index * 3); // Simplification, or standard math:
-    // Let's use clean division:
     double doubleBytes = bytes.toDouble();
     int suffixIndex = 0;
     while (doubleBytes >= 1024 && suffixIndex < suffixes.length - 1) {
