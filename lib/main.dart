@@ -4,6 +4,7 @@ import 'presentation/navigation/main_shell.dart';
 import 'providers/navigation_provider.dart';
 import 'providers/session_provider.dart';
 import 'providers/document_provider.dart';
+import 'providers/settings_provider.dart';
 
 void main() {
   runApp(
@@ -12,6 +13,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => NavigationProvider()),
         ChangeNotifierProvider(create: (_) => SessionProvider()),
         ChangeNotifierProvider(create: (_) => DocumentProvider()),
+        ChangeNotifierProvider(create: (_) => SettingsProvider()),
       ],
       child: const UbuntuElimuApp(),
     ),

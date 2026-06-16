@@ -10,6 +10,7 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Check if provider is available
     final settings = Provider.of<SettingsProvider>(context);
 
     return SingleChildScrollView(
