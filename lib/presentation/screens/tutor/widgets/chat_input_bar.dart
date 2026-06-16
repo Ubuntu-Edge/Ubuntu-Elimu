@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/typography.dart';
-import '../../../../providers/session_provider.dart';
 
 class ChatInputBar extends StatefulWidget {
-  const ChatInputBar({super.key});
+  final ValueChanged<String> onSend;
+  final bool isTyping;
+
+  const ChatInputBar({
+    super.key,
+    required this.onSend,
+    this.isTyping = false,
+  });
 
   @override
   State<ChatInputBar> createState() => _ChatInputBarState();
@@ -14,6 +18,16 @@ class ChatInputBar extends StatefulWidget {
 
 class _ChatInputBarState extends State<ChatInputBar> {
   final TextEditingController _controller = TextEditingController();
+  bool _hasText = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(() {
+      final has = _controller.text.trim().isNotEmpty;
+      if (has != _hasText) setState(() => _hasText = has);
+    });
+  }
 
   @override
   void dispose() {
@@ -21,128 +35,83 @@ class _ChatInputBarState extends State<ChatInputBar> {
     super.dispose();
   }
 
-  void _submit() {
+  void _send() {
     final text = _controller.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty || widget.isTyping) return;
     _controller.clear();
-    Provider.of<SessionProvider>(context, listen: false).sendMessage(text);
+    widget.onSend(text);
   }
 
   @override
   Widget build(BuildContext context) {
-    final sessionProvider = Provider.of<SessionProvider>(context);
-
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
-        color: UEColors.bg,
+      padding: EdgeInsets.fromLTRB(
+        16,
+        10,
+        16,
+        MediaQuery.of(context).padding.bottom + 12,
+      ),
+      decoration: BoxDecoration(
+        color: UEColors.bgPrimary,
         border: Border(
-          top: const BorderSide(color: UEColors.surface, width: 0.5),
+          top: BorderSide(color: UEColors.bgCard, width: 0.5),
         ),
       ),
-      child: SafeArea(
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
+        decoration: BoxDecoration(
+          color: UEColors.bgCard,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: _hasText ? UEColors.indigo.withOpacity(0.4) : UEColors.bgBorder,
+            width: 0.5,
+          ),
+        ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            // Reset / Clear button
-            GestureDetector(
-              onTap: () {
-                sessionProvider.clearChat();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: const Text('Conversation reset'),
-                    backgroundColor: UEColors.surface,
-                    duration: const Duration(seconds: 1),
-                  ),
-                );
-              },
-
-              child: Container(
-                width: 38,
-                height: 38,
-                decoration: const BoxDecoration(
-                  color: UEColors.surface,
-                  border: Border.fromBorderSide(BorderSide(color: UEColors.border, width: 0.5)),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  TablerIcons.refresh,
-                  color: UEColors.textMuted,
-                  size: 16,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-
-            // Input Field container
             Expanded(
-              child: Container(
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: UEColors.surface,
-                  border: Border.all(color: UEColors.border, width: 0.5),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        style: UETypography.inter(fontSize: 13, color: UEColors.textPrimary),
-                        decoration: InputDecoration(
-                          hintText: 'Ask Socratic AI...',
-                          hintStyle: UETypography.inter(fontSize: 13, color: UEColors.textMuted),
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                        ),
-                        onSubmitted: (_) => _submit(),
-                      ),
-                    ),
-                    // Simulate Voice Icon
-                    GestureDetector(
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text('Offline Dictation listening...'),
-                            backgroundColor: UEColors.surface,
-                          ),
-                        );
-                      },
-                      child: const Icon(
-                        TablerIcons.microphone,
-                        color: UEColors.textMuted,
-                        size: 16,
-                      ),
-                    ),
-                  ],
+              child: TextField(
+                controller: _controller,
+                maxLines: 4,
+                minLines: 1,
+                onSubmitted: (_) => _send(),
+                textInputAction: TextInputAction.newline,
+                style: UETypography.bodyMd.copyWith(fontSize: 14),
+                cursorColor: UEColors.indigo,
+                decoration: InputDecoration(
+                  hintText: 'Ask anything...',
+                  hintStyle: UETypography.bodyMd.copyWith(
+                    color: UEColors.textDim,
+                    fontSize: 14,
+                  ),
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
                 ),
               ),
             ),
-            const SizedBox(width: 8),
-
-            // Send button
-            GestureDetector(
-              onTap: sessionProvider.isGenerating ? null : _submit,
-              child: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: sessionProvider.isGenerating ? UEColors.surface : UEColors.accent,
-                  shape: BoxShape.circle,
+            const SizedBox(width: 10),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _hasText && !widget.isTyping
+                    ? UEColors.indigo
+                    : UEColors.bgBorder,
+              ),
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                onPressed: _hasText && !widget.isTyping ? _send : null,
+                icon: Icon(
+                  Icons.arrow_upward_rounded,
+                  size: 18,
+                  color: _hasText && !widget.isTyping
+                      ? Colors.white
+                      : UEColors.textDim,
                 ),
-                child: sessionProvider.isGenerating
-                    ? const Padding(
-                        padding: EdgeInsets.all(10),
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: UEColors.accent,
-                        ),
-                      )
-                    : const Icon(
-                        TablerIcons.send,
-                        color: Colors.white,
-                        size: 16,
-                      ),
               ),
             ),
           ],
