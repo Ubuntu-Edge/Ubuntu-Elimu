@@ -1,21 +1,40 @@
-import 'package:flutter/material.dart';
+enum DocType { pdf, pptx, docx, image, other }
+
+extension DocTypeExt on DocType {
+  String get extension {
+    switch (this) {
+      case DocType.pdf:   return 'PDF';
+      case DocType.pptx:  return 'PPTX';
+      case DocType.docx:  return 'DOCX';
+      case DocType.image: return 'IMG';
+      case DocType.other: return 'FILE';
+    }
+  }
+}
 
 class Document {
   final String id;
   final String name;
-  final String fileType; // pdf, pptx, docx, etc.
+  final DocType type;
   final int sizeBytes;
-  final DateTime uploadTime;
-  final String tag;
-  final Color tagColor;
+  final DateTime addedAt;
+  final int? pageCount;
+  final int? flashcardCount;
 
-  Document({
+  const Document({
     required this.id,
     required this.name,
-    required this.fileType,
+    required this.type,
     required this.sizeBytes,
-    required this.uploadTime,
-    required this.tag,
-    required this.tagColor,
+    required this.addedAt,
+    this.pageCount,
+    this.flashcardCount,
   });
+
+  String get sizeLabel {
+    if (sizeBytes < 1024 * 1024) {
+      return '${(sizeBytes / 1024).toStringAsFixed(1)} KB';
+    }
+    return '${(sizeBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
 }
