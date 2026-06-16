@@ -1,55 +1,41 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
 import '../theme/colors.dart';
+import '../../models/document.dart';
 
 class FileUtils {
-  static Color getIconBg(String type) {
-    switch (type.toLowerCase()) {
-      case 'pdf':
-        return UEColors.pdfBg;
-      case 'pptx':
-        return UEColors.pptxBg;
-      case 'docx':
-        return UEColors.docxBg;
-      default:
-        return UEColors.iconBg;
+  FileUtils._();
+
+  static Color getIconBg(DocType type) {
+    switch (type) {
+      case DocType.pdf:   return UEColors.pdfBg;
+      case DocType.pptx:  return UEColors.pptxBg;
+      case DocType.docx:  return UEColors.docxBg;
+      default:            return UEColors.bgElevated;
     }
   }
 
-  static Color getIconFg(String type) {
-    switch (type.toLowerCase()) {
-      case 'pdf':
-        return UEColors.pdfFg;
-      case 'pptx':
-        return UEColors.pptxFg;
-      case 'docx':
-        return UEColors.docxFg;
-      default:
-        return UEColors.accent;
+  static Color getIconFg(DocType type) {
+    switch (type) {
+      case DocType.pdf:   return UEColors.pdfColor;
+      case DocType.pptx:  return UEColors.pptxColor;
+      case DocType.docx:  return UEColors.docxColor;
+      default:            return UEColors.indigo;
     }
   }
 
-  static IconData getIcon(String type) {
-    switch (type.toLowerCase()) {
-      case 'pdf':
-        return TablerIcons.file_type_pdf;
-      case 'pptx':
-        return TablerIcons.presentation;
-      case 'docx':
-        return TablerIcons.file_text;
-      case 'zip':
-        return TablerIcons.zip;
-      case 'audio':
-      case 'mp3':
-        return TablerIcons.headphones;
-      default:
-        return TablerIcons.file;
+  static IconData getIcon(DocType type) {
+    switch (type) {
+      case DocType.pdf:   return Icons.picture_as_pdf_rounded;
+      case DocType.pptx:  return Icons.slideshow_rounded;
+      case DocType.docx:  return Icons.description_rounded;
+      case DocType.image: return Icons.image_rounded;
+      default:            return Icons.insert_drive_file_rounded;
     }
   }
 
   static String formatBytes(int bytes, {int decimals = 1}) {
-    if (bytes <= 0) return "0 B";
-    const suffixes = ["B", "KB", "MB", "GB", "TB"];
+    if (bytes <= 0) return '0 B';
+    const suffixes = ['B', 'KB', 'MB', 'GB', 'TB'];
     double doubleBytes = bytes.toDouble();
     int suffixIndex = 0;
     while (doubleBytes >= 1024 && suffixIndex < suffixes.length - 1) {

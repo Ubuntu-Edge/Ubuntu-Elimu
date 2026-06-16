@@ -17,11 +17,13 @@ class DocumentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final iconBg = FileUtils.getIconBg(doc.fileType);
-    final iconFg = FileUtils.getIconFg(doc.fileType);
-    final icon = FileUtils.getIcon(doc.fileType);
-    final sizeStr = FileUtils.formatBytes(doc.sizeBytes);
-    final timeStr = DateUtilsHelper.getRelativeTime(doc.uploadTime);
+    // Using doc.type instead of doc.fileType
+    final iconBg = FileUtils.getIconBg(doc.type);
+    final iconFg = FileUtils.getIconFg(doc.type);
+    final icon = FileUtils.getIcon(doc.type);
+    final sizeStr = doc.sizeLabel; // Using model's helper
+    // Using doc.addedAt instead of doc.uploadTime
+    final timeStr = DateUtilsHelper.getRelativeTime(doc.addedAt);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -79,7 +81,7 @@ class DocumentCard extends StatelessWidget {
                 builder: (context) => FileActionSheet(doc: doc),
               );
             },
-            child: Icon(
+            child: const Icon(
               TablerIcons.dots_vertical,
               color: UEColors.textMuted,
               size: 18,

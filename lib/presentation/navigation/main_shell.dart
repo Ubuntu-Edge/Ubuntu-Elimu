@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
 import '../../core/theme/colors.dart';
 import '../../core/theme/typography.dart';
 import '../../providers/navigation_provider.dart';
@@ -23,18 +22,16 @@ class MainShell extends StatelessWidget {
     final sessionProvider = Provider.of<SessionProvider>(context);
 
     return Scaffold(
-      backgroundColor: UEColors.bg,
+      backgroundColor: UEColors.bgPrimary,
       body: SafeArea(
         bottom: false,
         child: Stack(
           children: [
-            // Current Screen Content
             Positioned.fill(
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 80), // height of bottom nav
+                padding: const EdgeInsets.only(bottom: 80),
                 child: Column(
                   children: [
-                    // Persistent Status Bar
                     _StatusBar(
                       isOffline: sessionProvider.isOffline,
                       onToggleOffline: () {
@@ -50,7 +47,7 @@ class MainShell extends StatelessWidget {
                           LibraryScreen(),
                           ExamPrepScreen(),
                           ResearchScreen(),
-                          SettingsScreen(), // Hidden index accessed via quick links/taps
+                          SettingsScreen(),
                         ],
                       ),
                     ),
@@ -58,8 +55,6 @@ class MainShell extends StatelessWidget {
                 ),
               ),
             ),
-
-            // Bottom Navigation
             Positioned(
               left: 0,
               right: 0,
@@ -94,7 +89,10 @@ class _StatusBar extends StatelessWidget {
         children: [
           Text(
             '9:41',
-            style: UETypography.inter(fontSize: 12, color: UEColors.textMuted),
+            style: UETypography.label.copyWith(
+              color: UEColors.textMuted,
+              fontSize: 12,
+            ),
           ),
           _OfflineBadge(
             isOffline: isOffline,
@@ -143,10 +141,12 @@ class _OfflineBadgeState extends State<_OfflineBadge>
 
   @override
   Widget build(BuildContext context) {
-    final activeBg = widget.isOffline ? UEColors.greenBg : UEColors.iconBg;
-    final activeBorder = widget.isOffline ? UEColors.greenBorder : UEColors.border;
-    final activeColor = widget.isOffline ? UEColors.green : UEColors.accent;
-    final labelText = widget.isOffline ? 'Offline · Ready' : 'Online · Syncing';
+    final activeBg = widget.isOffline ? UEColors.onlineBg : UEColors.bgElevated;
+    final activeBorder =
+        widget.isOffline ? UEColors.onlineBorder : UEColors.bgBorder;
+    final activeColor = widget.isOffline ? UEColors.online : UEColors.indigo;
+    final labelText =
+        widget.isOffline ? 'Offline · Ready' : 'Online · Syncing';
 
     return GestureDetector(
       onTap: widget.onTap,
@@ -174,7 +174,11 @@ class _OfflineBadgeState extends State<_OfflineBadge>
             const SizedBox(width: 5),
             Text(
               labelText,
-              style: UETypography.inter(fontSize: 11, color: activeColor, fontWeight: FontWeight.w500),
+              style: UETypography.label.copyWith(
+                color: activeColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),
@@ -198,11 +202,11 @@ class _BottomNav extends StatelessWidget {
   final ValueChanged<int> onTap;
 
   static const List<_BottomNavItem> _navItems = [
-    _BottomNavItem(icon: TablerIcons.home_2, label: 'Home'),
-    _BottomNavItem(icon: TablerIcons.message_chatbot, label: 'Tutor'),
-    _BottomNavItem(icon: TablerIcons.books, label: 'Library'),
-    _BottomNavItem(icon: TablerIcons.school, label: 'Exam'),
-    _BottomNavItem(icon: TablerIcons.world_search, label: 'Research'),
+    _BottomNavItem(icon: Icons.home_rounded, label: 'Home'),
+    _BottomNavItem(icon: Icons.chat_bubble_outline_rounded, label: 'Tutor'),
+    _BottomNavItem(icon: Icons.folder_copy_outlined, label: 'Library'),
+    _BottomNavItem(icon: Icons.menu_book_outlined, label: 'Exam'),
+    _BottomNavItem(icon: Icons.travel_explore_rounded, label: 'Research'),
   ];
 
   const _BottomNav({
@@ -214,10 +218,10 @@ class _BottomNav extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 75,
-      decoration: const BoxDecoration(
-        color: UEColors.bg,
+      decoration: BoxDecoration(
+        color: UEColors.bgPrimary,
         border: Border(
-          top: BorderSide(color: UEColors.surface, width: 0.5),
+          top: BorderSide(color: UEColors.bgCard, width: 0.5),
         ),
       ),
       child: SafeArea(
@@ -225,7 +229,6 @@ class _BottomNav extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: List.generate(_navItems.length, (i) {
-            // Settings screen index is 5, highlight nothing in nav if 5 is selected.
             final active = i == selectedIndex;
             final item = _navItems[i];
 
@@ -242,15 +245,16 @@ class _BottomNav extends StatelessWidget {
                       Icon(
                         item.icon,
                         size: 22,
-                        color: active ? UEColors.accent : UEColors.textMuted,
+                        color: active ? UEColors.indigo : UEColors.textMuted,
                       ),
                       const SizedBox(height: 4),
                       Text(
                         item.label,
-                        style: UETypography.inter(
+                        style: UETypography.label.copyWith(
                           fontSize: 10,
-                          fontWeight: active ? FontWeight.w600 : FontWeight.w400,
-                          color: active ? UEColors.accent : UEColors.textMuted,
+                          fontWeight:
+                              active ? FontWeight.w600 : FontWeight.w400,
+                          color: active ? UEColors.indigo : UEColors.textMuted,
                         ),
                       ),
                     ],

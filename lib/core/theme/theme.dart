@@ -6,17 +6,15 @@ class UETheme {
   static ThemeData get darkTheme {
     return ThemeData(
       brightness: Brightness.dark,
-      primaryColor: UEColors.accent,
-      scaffoldBackgroundColor: UEColors.bg,
+      primaryColor: UEColors.indigo,
+      scaffoldBackgroundColor: UEColors.bgPrimary,
       fontFamily: 'Inter',
-      textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme).copyWith(
-        // Allow fallback or overrides
-      ),
+      textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
       colorScheme: const ColorScheme.dark(
-        primary: UEColors.accent,
+        primary: UEColors.indigo,
         secondary: UEColors.violet,
-        surface: UEColors.surface,
-        error: UEColors.pdfFg,
+        surface: UEColors.bgCard,
+        error: UEColors.pdfColor,
       ),
     );
   }

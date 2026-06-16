@@ -1,35 +1,33 @@
 import 'package:flutter/material.dart';
 import '../models/document.dart';
-import '../core/theme/colors.dart';
 
 class DocumentProvider with ChangeNotifier {
   final List<Document> _documents = [
     Document(
       id: 'doc_1',
       name: 'Biochem Lecture Notes — W4.pdf',
-      fileType: 'pdf',
+      type: DocType.pdf,
       sizeBytes: 2400000,
-      uploadTime: DateTime.now(),
-      tag: 'New',
-      tagColor: UEColors.accent,
+      addedAt: DateTime.now(),
+      pageCount: 24,
+      flashcardCount: 18,
     ),
     Document(
       id: 'doc_2',
       name: 'Thermodynamics Slides.pptx',
-      fileType: 'pptx',
+      type: DocType.pptx,
       sizeBytes: 8100000,
-      uploadTime: DateTime.now().subtract(const Duration(days: 1)),
-      tag: '12 cards',
-      tagColor: UEColors.pptxFg,
+      addedAt: DateTime.now().subtract(const Duration(days: 1)),
+      pageCount: 34,
+      flashcardCount: 12,
     ),
     Document(
       id: 'doc_3',
       name: 'Research Handbook — APA.docx',
-      fileType: 'docx',
+      type: DocType.docx,
       sizeBytes: 1100000,
-      uploadTime: DateTime.now().subtract(const Duration(days: 3)),
-      tag: 'Active',
-      tagColor: UEColors.docxFg,
+      addedAt: DateTime.now().subtract(const Duration(days: 3)),
+      pageCount: 88,
     ),
   ];
 
@@ -38,16 +36,17 @@ class DocumentProvider with ChangeNotifier {
 
   List<Document> get documents {
     return _documents.where((doc) {
-      final matchesSearch = doc.name.toLowerCase().contains(_searchQuery.toLowerCase());
-      final matchesCategory = _selectedCategory == 'all' || doc.fileType.toLowerCase() == _selectedCategory.toLowerCase();
+      final matchesSearch =
+          doc.name.toLowerCase().contains(_searchQuery.toLowerCase());
+      final matchesCategory = _selectedCategory == 'all' ||
+          doc.type.extension.toLowerCase() == _selectedCategory.toLowerCase();
       return matchesSearch && matchesCategory;
     }).toList();
   }
 
   List<Document> get recentUploads {
-    // Return newest uploads first
     final sorted = List<Document>.from(_documents);
-    sorted.sort((a, b) => b.uploadTime.compareTo(a.uploadTime));
+    sorted.sort((a, b) => b.addedAt.compareTo(a.addedAt));
     return sorted.take(3).toList();
   }
 
@@ -64,15 +63,13 @@ class DocumentProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void uploadDocument(String name, String type, int sizeBytes) {
+  void uploadDocument(String name, DocType type, int sizeBytes) {
     final newDoc = Document(
       id: 'doc_${DateTime.now().millisecondsSinceEpoch}',
       name: name,
-      fileType: type,
+      type: type,
       sizeBytes: sizeBytes,
-      uploadTime: DateTime.now(),
-      tag: 'Added',
-      tagColor: UEColors.green,
+      addedAt: DateTime.now(),
     );
     _documents.add(newDoc);
     notifyListeners();
