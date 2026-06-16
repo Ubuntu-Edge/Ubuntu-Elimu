@@ -29,7 +29,7 @@ class MainShell extends StatelessWidget {
           children: [
             Positioned.fill(
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 80),
+                padding: const EdgeInsets.only(bottom: 70),
                 child: Column(
                   children: [
                     _StatusBar(
@@ -74,6 +74,7 @@ class _StatusBar extends StatelessWidget {
   final VoidCallback onToggleOffline;
 
   const _StatusBar({
+    super.key,
     required this.isOffline,
     required this.onToggleOffline,
   });
@@ -141,8 +142,7 @@ class _OfflineBadgeState extends State<_OfflineBadge>
   Widget build(BuildContext context) {
     final activeBg = widget.isOffline ? UEColors.onlineBg : UEColors.bgElevated;
     final activeBorder =
-        widget.isOffline ? UEColors.onlineBorder : UEColors.bgBorder;
-    final activeColor = widget.isOffline ? UEColors.online : UEColors.indigo;
+        widget.isOffline ? UEColors.onlineBorder : UEColors.bgBorder;    final activeColor = widget.isOffline ? UEColors.online : UEColors.indigo;
     final labelText =
         widget.isOffline ? 'Offline · Ready' : 'Online · Syncing';
 
@@ -216,8 +216,7 @@ class _BottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 75,
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: UEColors.bgPrimary,
         border: Border(
           top: BorderSide(color: UEColors.bgCard, width: 0.5),
@@ -225,18 +224,18 @@ class _BottomNav extends StatelessWidget {
       ),
       child: SafeArea(
         top: false,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: List.generate(_navItems.length, (i) {
-            final active = i == selectedIndex;
-            final item = _navItems[i];
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: List.generate(_navItems.length, (i) {
+              final active = i == selectedIndex;
+              final item = _navItems[i];
 
-            return Expanded(
-              child: GestureDetector(
-                onTap: () => onTap(i),
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+              return Expanded(
+                child: GestureDetector(
+                  onTap: () => onTap(i),
+                  behavior: HitTestBehavior.opaque,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -259,9 +258,9 @@ class _BottomNav extends StatelessWidget {
                     ],
                   ),
                 ),
-              ),
-            );
-          }),
+              );
+            }),
+          ),
         ),
       ),
     );
