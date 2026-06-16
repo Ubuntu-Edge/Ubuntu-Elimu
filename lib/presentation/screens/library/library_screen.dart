@@ -5,6 +5,8 @@ import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
 import '../../../providers/document_provider.dart';
+// CRITICAL FIX: Importing the model file exposes the official DocType enum to this screen
+import '../../../models/document.dart';
 import 'widgets/document_card.dart';
 
 class LibraryScreen extends StatelessWidget {
@@ -65,9 +67,8 @@ class LibraryScreen extends StatelessWidget {
           Expanded(
             child: TextField(
               style: UETypography.inter(fontSize: 13, color: UEColors.textPrimary),
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 hintText: 'Search offline files...',
-                hintStyle: UETypography.inter(fontSize: 13, color: UEColors.textMuted),
                 border: InputBorder.none,
                 isDense: true,
               ),
@@ -126,7 +127,7 @@ class LibraryScreen extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(TablerIcons.file_off, size: 36, color: UEColors.border),
+            const Icon(TablerIcons.file_off, size: 36, color: UEColors.border),
             const SizedBox(height: 12),
             Text(
               'No matching offline files found',
@@ -138,7 +139,7 @@ class LibraryScreen extends StatelessWidget {
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 80), // extra padding for FAB
+      padding: const EdgeInsets.only(bottom: 80),
       itemCount: docs.length,
       itemBuilder: (context, index) {
         return DocumentCard(doc: docs[index]);
@@ -155,14 +156,22 @@ class LibraryScreen extends StatelessWidget {
       'Kiswahili Grammar guide.pdf',
       'Microeconomics lecture slides.pptx'
     ];
-    final extensions = ['pdf', 'docx', 'pptx', 'pdf', 'pptx'];
+
+    // Now cleanly mapping directly to the official DocType enum definitions from your model
+    final docTypes = [
+      DocType.pdf,
+      DocType.docx,
+      DocType.pptx,
+      DocType.pdf,
+      DocType.pptx
+    ];
+
     final idx = random.nextInt(names.length);
-
     final name = names[idx];
-    final ext = extensions[idx];
-    final size = 1000000 + random.nextInt(15000000); // 1 MB to 16 MB
+    final selectedType = docTypes[idx];
+    final size = 1000000 + random.nextInt(15000000);
 
-    provider.uploadDocument(name, ext, size);
+    provider.uploadDocument(name, selectedType, size);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

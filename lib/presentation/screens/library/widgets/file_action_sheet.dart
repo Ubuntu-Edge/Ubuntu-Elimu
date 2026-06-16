@@ -34,8 +34,8 @@ class FileActionSheet extends StatelessWidget {
             Row(
               children: [
                 Icon(
-                  FileUtils.getIcon(doc.fileType),
-                  color: FileUtils.getIconFg(doc.fileType),
+                  FileUtils.getIcon(doc.type),
+                  color: FileUtils.getIconFg(doc.type),
                   size: 20,
                 ),
                 const SizedBox(width: 12),
@@ -54,7 +54,7 @@ class FileActionSheet extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Size: ${FileUtils.formatBytes(doc.sizeBytes)} · Offline storage',
+              'Size: ${doc.sizeLabel} · Offline storage',
               style: UETypography.inter(fontSize: 12, color: UEColors.textMuted),
             ),
             const Padding(
@@ -70,7 +70,7 @@ class FileActionSheet extends StatelessWidget {
               onTap: () {
                 sessionProvider.updateActiveSession(
                   doc.name,
-                  '${FileUtils.formatBytes(doc.sizeBytes)} · Socratic Context Active',
+                  '${doc.sizeLabel} · Socratic Context Active',
                 );
                 Navigator.pop(context);
                 navProvider.setIndex(1); // switch to tutor
