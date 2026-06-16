@@ -432,10 +432,9 @@ class _DocData {
         required this.tag,
         required this.tagColor});
 }
-
 class _DocCard extends StatelessWidget {
   final _DocData data;
-  const _DocCard({required this.data, super.key});
+  const _DocCard({required this.data});
 
   Color get _iconBg => switch (data.type) {
     'pdf'  => UEColors.pdfBg,
