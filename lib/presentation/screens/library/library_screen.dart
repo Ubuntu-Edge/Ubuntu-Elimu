@@ -317,11 +317,7 @@ class LibraryScreen extends StatelessWidget {
 
     final idx = random.nextInt(names.length);
 
-    provider.uploadDocument(
-      names[idx],
-      docTypes[idx],
-      1000000 + random.nextInt(15000000),
-    );
+    provider.pickAndUploadDocument();
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

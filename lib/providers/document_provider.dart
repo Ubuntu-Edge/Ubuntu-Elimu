@@ -2,9 +2,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:flutter_pdftext/flutter_pdftext.dart';
-import 'package:docx_to_text/docx_to_text.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+
 import '../models/document.dart';
 
 class DocumentProvider with ChangeNotifier {
@@ -16,7 +15,9 @@ class DocumentProvider with ChangeNotifier {
 
   late Box _documentBox;
 
-  // ─── Getters ───────────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // Getters
+  // ─────────────────────────────────────────────
 
   bool get isLoading => _isLoading;
   String? get error => _error;
@@ -27,8 +28,11 @@ class DocumentProvider with ChangeNotifier {
     return _documents.where((doc) {
       final matchesSearch =
       doc.name.toLowerCase().contains(_searchQuery.toLowerCase());
+
       final matchesCategory = _selectedCategory == 'all' ||
-          doc.type.extension.toLowerCase() == _selectedCategory.toLowerCase();
+          doc.type.extension.toLowerCase() ==
+              _selectedCategory.toLowerCase();
+
       return matchesSearch && matchesCategory;
     }).toList();
   }
@@ -39,7 +43,9 @@ class DocumentProvider with ChangeNotifier {
     return sorted.take(3).toList();
   }
 
-  // ─── Init — load persisted documents from Hive ─────────────
+  // ─────────────────────────────────────────────
+  // Init Hive
+  // ─────────────────────────────────────────────
 
   Future<void> init() async {
     _documentBox = await Hive.openBox('documents');
@@ -48,11 +54,17 @@ class DocumentProvider with ChangeNotifier {
 
   void _loadFromHive() {
     final stored = _documentBox.values.toList();
-    _documents = stored.map((e) => Document.fromMap(Map<String, dynamic>.from(e))).toList();
+
+    _documents = stored
+        .map((e) => Document.fromMap(Map<String, dynamic>.from(e)))
+        .toList();
+
     notifyListeners();
   }
 
-  // ─── Pick and Upload a Real File ───────────────────────────
+  // ─────────────────────────────────────────────
+  // Upload Document
+  // ─────────────────────────────────────────────
 
   Future<void> pickAndUploadDocument() async {
     _error = null;
@@ -61,7 +73,6 @@ class DocumentProvider with ChangeNotifier {
       type: FileType.custom,
       allowedExtensions: ['pdf', 'docx'],
       withData: false,
-      withReadStream: false,
     );
 
     if (result == null || result.files.isEmpty) return;
@@ -72,22 +83,21 @@ class DocumentProvider with ChangeNotifier {
     final sourceFile = File(pickedFile.path!);
     final extension = pickedFile.extension?.toLowerCase() ?? '';
 
-    // Determine type
     DocType? type;
     if (extension == 'pdf') type = DocType.pdf;
     if (extension == 'docx') type = DocType.docx;
+
     if (type == null) {
       _error = 'Unsupported file type';
       notifyListeners();
       return;
     }
 
-    // Copy file to app storage so it persists
+    // Save locally
     final appDir = await getApplicationDocumentsDirectory();
     final savedPath = '${appDir.path}/${pickedFile.name}';
     await sourceFile.copy(savedPath);
 
-    // Create document entry
     final doc = Document(
       id: 'doc_${DateTime.now().millisecondsSinceEpoch}',
       name: pickedFile.name,
@@ -103,25 +113,21 @@ class DocumentProvider with ChangeNotifier {
     _saveToHive(doc);
     notifyListeners();
 
-    // Extract text in background
-    await _extractAndChunk(doc);
+    // Process asynchronously
+    await _processDocument(doc);
   }
 
-  // ─── Text Extraction ────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // Document Processing Pipeline (AI-ready)
+  // ─────────────────────────────────────────────
 
-  Future<void> _extractAndChunk(Document doc) async {
+  Future<void> _processDocument(Document doc) async {
     if (doc.filePath == null) return;
 
     _setLoading(true);
 
     try {
-      String rawText = '';
-
-      if (doc.type == DocType.pdf) {
-        rawText = await _extractPdf(doc.filePath!);
-      } else if (doc.type == DocType.docx) {
-        rawText = await _extractDocx(doc.filePath!);
-      }
+      final rawText = await _extractText(doc.filePath!, doc.type);
 
       if (rawText.isEmpty) {
         _error = 'Could not extract text from ${doc.name}';
@@ -131,7 +137,6 @@ class DocumentProvider with ChangeNotifier {
 
       final chunks = _chunkText(rawText);
 
-      // Update the document with extracted data
       final updated = doc.copyWith(
         extractedText: rawText,
         chunks: chunks,
@@ -142,55 +147,72 @@ class DocumentProvider with ChangeNotifier {
       if (index != -1) _documents[index] = updated;
 
       _saveToHive(updated);
+      notifyListeners();
     } catch (e) {
-      _error = 'Extraction failed: $e';
+      _error = 'Processing failed: $e';
     }
 
     _setLoading(false);
   }
 
-  Future<String> _extractPdf(String path) async {
+  // ─────────────────────────────────────────────
+  // SAFE TEXT EXTRACTION (TEMP IMPLEMENTATION)
+  // ─────────────────────────────────────────────
+
+  Future<String> _extractText(String path, DocType type) async {
     try {
-      final text = await FlutterPdfText.getPDFtext(path);
-      return text.trim();
+      final file = File(path);
+      final bytes = await file.readAsBytes();
+
+      // ⚠️ TEMP fallback (NOT real parsing)
+      // This will be replaced by:
+      // - native Android parser OR
+      // - Rust service OR
+      // - Python backend OR
+      // - llama.cpp ingestion pipeline
+
+      return String.fromCharCodes(bytes).trim();
     } catch (e) {
       return '';
     }
   }
 
-  Future<String> _extractDocx(String path) async {
-    try {
-      final bytes = await File(path).readAsBytes();
-      final text = docxToText(bytes);
-      return text.trim();
-    } catch (e) {
-      return '';
-    }
-  }
+  // ─────────────────────────────────────────────
+  // Chunking (RAG ready)
+  // ─────────────────────────────────────────────
 
-  // ─── Chunking ───────────────────────────────────────────────
-  // Splits text into ~500 word segments with 50 word overlap
-  // Overlap ensures context is not lost at chunk boundaries
-
-  List<String> _chunkText(String text, {int chunkSize = 500, int overlap = 50}) {
+  List<String> _chunkText(
+      String text, {
+        int chunkSize = 500,
+        int overlap = 50,
+      }) {
     final words = text.split(RegExp(r'\s+'));
     final chunks = <String>[];
 
     int start = 0;
+
     while (start < words.length) {
       final end = (start + chunkSize).clamp(0, words.length);
+
       chunks.add(words.sublist(start, end).join(' '));
+
       if (end == words.length) break;
-      start += chunkSize - overlap; // slide with overlap
+
+      start += chunkSize - overlap;
     }
 
     return chunks;
   }
 
-  // ─── Retrieval — find most relevant chunks for a query ──────
-  // Simple keyword match for now — good enough for offline RAG
+  // ─────────────────────────────────────────────
+  // Retrieval (basic RAG)
+  // ─────────────────────────────────────────────
 
-  List<String> getRelevantChunks(String docId, String query, {int topK = 3}) {
+  List<String> getRelevantChunks(
+      String docId,
+      String query, {
+        int topK = 3,
+      }) {
     final doc = _documents.firstWhere(
           (d) => d.id == docId,
       orElse: () => throw Exception('Document not found'),
@@ -200,10 +222,10 @@ class DocumentProvider with ChangeNotifier {
 
     final queryWords = query.toLowerCase().split(RegExp(r'\s+'));
 
-    // Score each chunk by how many query words it contains
     final scored = doc.chunks.map((chunk) {
       final lower = chunk.toLowerCase();
-      final score = queryWords.where((w) => lower.contains(w)).length;
+      final score =
+          queryWords.where((w) => lower.contains(w)).length;
       return MapEntry(chunk, score);
     }).toList();
 
@@ -212,7 +234,9 @@ class DocumentProvider with ChangeNotifier {
     return scored.take(topK).map((e) => e.key).toList();
   }
 
-  // ─── Persistence ────────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // Hive Persistence
+  // ─────────────────────────────────────────────
 
   void _saveToHive(Document doc) {
     _documentBox.put(doc.id, doc.toMap());
@@ -224,7 +248,9 @@ class DocumentProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // ─── Filters ────────────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // UI Helpers
+  // ─────────────────────────────────────────────
 
   void setSearchQuery(String query) {
     _searchQuery = query;
@@ -239,5 +265,18 @@ class DocumentProvider with ChangeNotifier {
   void _setLoading(bool val) {
     _isLoading = val;
     notifyListeners();
+  }
+
+  // ─────────────────────────────────────────────
+  // FUTURE AI HOOK (IMPORTANT)
+  // ─────────────────────────────────────────────
+  // This is where you will later plug:
+  // - embeddings
+  // - vector DB
+  // - llama.cpp inference
+  // - offline RAG engine
+
+  void attachAIEngine() {
+    // TODO: connect to local model runtime
   }
 }
