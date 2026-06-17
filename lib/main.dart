@@ -1,48 +1,45 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'presentation/navigation/main_shell.dart';
+import 'app.dart';
 import 'providers/navigation_provider.dart';
 import 'providers/session_provider.dart';
 import 'providers/document_provider.dart';
 import 'providers/settings_provider.dart';
+import 'providers/offline_model_provider.dart';
+import 'services/offline_ai_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Initialize Hive
   await Hive.initFlutter();
-  
+
   // Initialize DocumentProvider and load stored documents
   final docProvider = DocumentProvider();
   await docProvider.init();
+
+  // Initialize SessionProvider and load session history
+  final sessionProvider = SessionProvider();
+  await sessionProvider.init();
+
+  // Initialize OfflineAIService
+  await OfflineAIService.instance.initialize();
+
+  // Initialize OfflineModelProvider and auto-load active model
+  final modelProvider = OfflineModelProvider();
+  await modelProvider.initialize();
 
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => NavigationProvider()),
-        ChangeNotifierProvider(create: (_) => SessionProvider()),
+        ChangeNotifierProvider.value(value: sessionProvider),
         ChangeNotifierProvider.value(value: docProvider),
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
+        ChangeNotifierProvider.value(value: modelProvider),
       ],
       child: const UbuntuElimuApp(),
     ),
   );
-}
-
-class UbuntuElimuApp extends StatelessWidget {
-  const UbuntuElimuApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Ubuntu Elimu',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        fontFamily: 'Inter',
-        scaffoldBackgroundColor: const Color(0xFF0D0F14),
-      ),
-      home: const MainShell(),
-    );
-  }
 }
