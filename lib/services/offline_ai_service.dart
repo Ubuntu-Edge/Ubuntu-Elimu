@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:llama_flutter_android/llama_flutter_android.dart';
+import 'package:llama_flutter_android/llama_flutter_android.dart' as llama;
+import 'package:collection/collection.dart';
 import '../models/offline_model.dart';
 import '../models/offline_context_params.dart';
 
@@ -11,7 +12,7 @@ class OfflineAIService {
   static OfflineAIService get instance => _instance;
   OfflineAIService._internal();
 
-  LlamaController? _controller;
+  llama.LlamaController? _controller;
   bool _isModelLoaded = false;
   bool get isModelLoaded => _isModelLoaded;
 
@@ -54,7 +55,7 @@ class OfflineAIService {
           ? contextParams
           : const OfflineContextParams();
 
-      _controller = LlamaController();
+      _controller = llama.LlamaController();
       await _controller!.loadModel(
         modelPath: modelPath,
         threads: params.nThreads,
@@ -114,8 +115,8 @@ class OfflineAIService {
 
     try {
       final messages = [
-        ChatMessage(role: 'system', content: systemPrompt),
-        ChatMessage(role: 'user', content: prompt),
+        llama.ChatMessage(role: 'system', content: systemPrompt),
+        llama.ChatMessage(role: 'user', content: prompt),
       ];
 
       final stream = _controller!.generateChat(
@@ -167,8 +168,6 @@ class OfflineAIService {
   }
 
   // ─── JSON Generation (with retry) ───────────────────────────
-  // Used by summary, flashcards, study plan features
-  // Retries up to 2 times if model returns malformed JSON
 
   Future<Map<String, dynamic>?> generateJson({
     required String prompt,
@@ -182,7 +181,7 @@ class OfflineAIService {
           prompt: prompt,
           systemPrompt: systemPrompt,
           maxTokens: maxTokens,
-          temperature: 0.3, // lower temp = more deterministic JSON
+          temperature: 0.3,
         );
 
         final cleaned = _extractJson(raw);
@@ -200,15 +199,12 @@ class OfflineAIService {
     return null;
   }
 
-  // Strips markdown fences and finds first valid JSON object
   String? _extractJson(String raw) {
-    // Remove ```json ... ``` fences
     String cleaned = raw
         .replaceAll(RegExp(r'```json\s*'), '')
         .replaceAll(RegExp(r'```\s*'), '')
         .trim();
 
-    // Find the outermost { ... }
     final start = cleaned.indexOf('{');
     final end = cleaned.lastIndexOf('}');
     if (start == -1 || end == -1 || end <= start) return null;
@@ -218,7 +214,6 @@ class OfflineAIService {
 
   // ─── Education Feature Methods ───────────────────────────────
 
-  /// Summarize document chunks into structured notes
   Future<Map<String, dynamic>?> summarizeChunks(List<String> chunks) async {
     final context = chunks.join('\n\n---\n\n');
 
@@ -244,7 +239,6 @@ $context
     );
   }
 
-  /// Generate flashcards from document chunks
   Future<List<Map<String, dynamic>>?> generateFlashcards(
       List<String> chunks, {
         int count = 8,
@@ -277,12 +271,11 @@ $context
     return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
-  /// Generate a multi-day study plan
   Future<Map<String, dynamic>?> generateStudyPlan(
       List<String> chunks, {
         int days = 3,
       }) async {
-    final context = chunks.take(3).join('\n\n---\n\n'); // first 3 chunks = overview
+    final context = chunks.take(3).join('\n\n---\n\n');
 
     return generateJson(
       systemPrompt:
@@ -309,8 +302,6 @@ $context
     );
   }
 
-  /// Socratic tutor — single turn, returns streaming response
-  /// Pass conversation history + relevant document chunks
   Stream<String> tutorStream({
     required String userMessage,
     required List<String> contextChunks,
@@ -318,8 +309,8 @@ $context
   }) {
     final context = contextChunks.take(2).join('\n\n---\n\n');
 
-    // Build conversation history string
-    final historyText = history.takeLast(6).map((m) {
+    final recentHistory = history.length > 6 ? history.sublist(history.length - 6) : history;
+    final historyText = recentHistory.map((m) {
       final role = m['role'] == 'user' ? 'Student' : 'Tutor';
       return '$role: ${m["content"]}';
     }).join('\n');
@@ -342,7 +333,6 @@ ${historyText.isNotEmpty ? "Previous conversation:\n$historyText\n\n" : ""}Stude
     );
   }
 
-  /// Grade a short answer against a correct answer
   Future<Map<String, dynamic>?> gradeAnswer({
     required String question,
     required String correctAnswer,
@@ -371,8 +361,6 @@ Return:
     );
   }
 
-  // ─── Utilities ───────────────────────────────────────────────
-
   Future<void> stopGeneration() async {
     _stopRequested = true;
     if (_controller != null) await _controller!.stop();
@@ -390,7 +378,6 @@ Return:
     return {
       'name': _loadedModel!.name,
       'path': _loadedModelPath,
-      'contextSize': _loadedModel!.contextSize,
       'status': 'loaded',
     };
   }

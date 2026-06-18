@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'app.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'presentation/navigation/main_shell.dart';
 import 'providers/navigation_provider.dart';
 import 'providers/session_provider.dart';
 import 'providers/document_provider.dart';
@@ -9,37 +10,80 @@ import 'providers/settings_provider.dart';
 import 'providers/offline_model_provider.dart';
 import 'services/offline_ai_service.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+void main() {
+  runApp(const BootstrapApp());
+}
 
-  // Initialize Hive
-  await Hive.initFlutter();
+class BootstrapApp extends StatefulWidget {
+  const BootstrapApp({super.key});
 
-  // Initialize DocumentProvider and load stored documents
-  final docProvider = DocumentProvider();
-  await docProvider.init();
+  @override
+  State<BootstrapApp> createState() => _BootstrapAppState();
+}
 
-  // Initialize SessionProvider and load session history
-  final sessionProvider = SessionProvider();
-  await sessionProvider.init();
+class _BootstrapAppState extends State<BootstrapApp> {
+  bool _ready = false;
 
-  // Initialize OfflineAIService
-  await OfflineAIService.instance.initialize();
+  late DocumentProvider _docProvider;
+  late OfflineModelProvider _modelProvider;
+  late SessionProvider _sessionProvider;
 
-  // Initialize OfflineModelProvider and auto-load active model
-  final modelProvider = OfflineModelProvider();
-  await modelProvider.initialize();
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
 
-  runApp(
-    MultiProvider(
+  Future<void> _init() async {
+    // Platform channels are guaranteed ready here
+    await Hive.initFlutter();
+    await SharedPreferences.getInstance();
+
+    _docProvider = DocumentProvider();
+    await _docProvider.init();
+
+    await OfflineAIService.instance.initialize();
+
+    _modelProvider = OfflineModelProvider();
+    await _modelProvider.initialize();
+
+    _sessionProvider = SessionProvider();
+    await _sessionProvider.init();
+
+    setState(() => _ready = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_ready) {
+      return const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: Color(0xFF0D0F14),
+          body: Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          ),
+        ),
+      );
+    }
+
+    return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => NavigationProvider()),
-        ChangeNotifierProvider.value(value: sessionProvider),
-        ChangeNotifierProvider.value(value: docProvider),
+        ChangeNotifierProvider.value(value: _sessionProvider),
+        ChangeNotifierProvider.value(value: _docProvider),
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
-        ChangeNotifierProvider.value(value: modelProvider),
+        ChangeNotifierProvider.value(value: _modelProvider),
       ],
-      child: const UbuntuElimuApp(),
-    ),
-  );
+      child: MaterialApp(
+        title: 'Ubuntu Elimu',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          fontFamily: 'Inter',
+          scaffoldBackgroundColor: const Color(0xFF0D0F14),
+        ),
+        home: const MainShell(),
+      ),
+    );
+  }
 }
