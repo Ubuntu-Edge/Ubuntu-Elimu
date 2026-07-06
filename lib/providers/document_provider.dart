@@ -234,6 +234,31 @@ class DocumentProvider with ChangeNotifier {
     return scored.take(topK).map((e) => e.key).toList();
   }
 
+  /// Finds documents relevant to a freeform topic across the whole library
+  /// (unlike getRelevantChunks, which is scoped to one known document id).
+  /// Used by the Research report flow to ground a report in real sources.
+  List<MapEntry<Document, List<String>>> findRelevantAcrossLibrary(
+      String query, {
+        int topKPerDoc = 2,
+        int maxDocs = 3,
+      }) {
+    final queryWords = query.toLowerCase().split(RegExp(r'\s+')).where((w) => w.length > 2).toList();
+    final results = <MapEntry<Document, List<String>>>[];
+
+    for (final doc in _documents) {
+      if (!doc.isProcessed || doc.chunks.isEmpty) continue;
+      final chunks = getRelevantChunks(doc.id, query, topK: topKPerDoc);
+      final hasMatch = chunks.any((c) {
+        final lower = c.toLowerCase();
+        return queryWords.any((w) => lower.contains(w));
+      });
+      if (hasMatch) results.add(MapEntry(doc, chunks));
+    }
+
+    results.sort((a, b) => b.value.length.compareTo(a.value.length));
+    return results.take(maxDocs).toList();
+  }
+
   // ─────────────────────────────────────────────
   // Hive Persistence
   // ─────────────────────────────────────────────

@@ -92,6 +92,8 @@ class SessionProvider with ChangeNotifier {
   Future<void> sendMessage(
       String text, {
         required DocumentProvider docProvider,
+        bool socratic = true,
+        String language = 'the same language the student uses',
       }) async {
     if (text.trim().isEmpty) return;
     if (!_isInitialized) await init();
@@ -142,6 +144,8 @@ class SessionProvider with ChangeNotifier {
         userMessage: text,
         contextChunks: chunks,
         history: _history,
+        socratic: socratic,
+        language: language,
       )) {
         accumulated += token;
         _updateLastMessage(accumulated);

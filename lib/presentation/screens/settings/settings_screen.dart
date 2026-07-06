@@ -3,15 +3,17 @@ import 'package:provider/provider.dart';
 import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
+import '../../../models/offline_model.dart';
 import '../../../providers/settings_provider.dart';
+import '../../../providers/offline_model_provider.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Check if provider is available
     final settings = Provider.of<SettingsProvider>(context);
+    final modelProvider = Provider.of<OfflineModelProvider>(context);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -21,15 +23,24 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 8),
           _buildSectionTitle('OFFLINE MODELS'),
           const SizedBox(height: 10),
-          _buildModelCard(context, settings),
-          const SizedBox(height: 24),
+          if (modelProvider.error != null) ...[
+            _buildErrorBanner(modelProvider.error!),
+            const SizedBox(height: 10),
+          ],
+          ...modelProvider.models.map(
+                (model) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _buildModelCard(context, modelProvider, model),
+            ),
+          ),
+          const SizedBox(height: 14),
           _buildSectionTitle('PREFERENCES'),
           const SizedBox(height: 10),
           _buildPreferenceSwitches(context, settings),
           const SizedBox(height: 24),
           _buildSectionTitle('LOCAL SYSTEM INFO'),
           const SizedBox(height: 10),
-          _buildSystemInfoCard(context),
+          _buildSystemInfoCard(context, modelProvider),
           const SizedBox(height: 24),
         ],
       ),
@@ -48,18 +59,53 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildModelCard(BuildContext context, SettingsProvider settings) {
+  Widget _buildErrorBanner(String message) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: UEColors.pdfBg,
+        border: Border.all(color: UEColors.pdfFg.withOpacity(0.4), width: 0.5),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(TablerIcons.alert_circle, color: UEColors.pdfFg, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: UETypography.inter(fontSize: 11, color: UEColors.pdfFg),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModelCard(
+      BuildContext context,
+      OfflineModelProvider modelProvider,
+      OfflineModel model,
+      ) {
+    final isActive = modelProvider.activeModel?.id == model.id;
+    final isDownloading = !model.isDownloaded && model.downloadProgress > 0;
+    final isLoadingIntoMemory = isActive && modelProvider.isContextLoading;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: UEColors.surface,
-        border: Border.all(color: UEColors.border, width: 0.5),
+        border: Border.all(
+          color: isActive ? UEColors.accent.withOpacity(0.6) : UEColors.border,
+          width: isActive ? 1 : 0.5,
+        ),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(TablerIcons.database, color: UEColors.accent, size: 20),
               const SizedBox(width: 12),
@@ -68,7 +114,7 @@ class SettingsScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Local LLM Database',
+                      model.name,
                       style: UETypography.spaceGrotesk(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -77,23 +123,43 @@ class SettingsScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      settings.modelName,
-                      style: UETypography.inter(
-                        fontSize: 11,
-                        color: UEColors.textMuted,
-                      ),
+                      '${model.author} · ${model.sizeMB.toStringAsFixed(0)} MB · ${model.quantization}',
+                      style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      model.description,
+                      style: UETypography.inter(fontSize: 11, color: UEColors.textSecondary, height: 1.4),
                     ),
                   ],
                 ),
               ),
+              if (isActive)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: UEColors.greenBg,
+                    border: Border.all(color: UEColors.greenBorder, width: 0.5),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    'Active',
+                    style: UETypography.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: UEColors.green,
+                    ),
+                  ),
+                ),
             ],
           ),
-          const SizedBox(height: 16),
-          if (settings.isDownloading) ...[
+          const SizedBox(height: 14),
+
+          if (isDownloading) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(4),
               child: LinearProgressIndicator(
-                value: settings.downloadProgress,
+                value: model.downloadProgress,
                 backgroundColor: UEColors.iconBg,
                 color: UEColors.accent,
                 minHeight: 6,
@@ -104,33 +170,73 @@ class SettingsScreen extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Downloading model weights...',
+                  'Downloading… ${(model.downloadProgress * 100).toInt()}%',
                   style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
                 ),
-                Text(
-                  '${(settings.downloadProgress * 100).toInt()}%',
-                  style: UETypography.inter(fontSize: 11, color: UEColors.accent, fontWeight: FontWeight.bold),
+                GestureDetector(
+                  onTap: () => modelProvider.cancelDownload(model.id),
+                  child: Text(
+                    'Cancel',
+                    style: UETypography.inter(
+                      fontSize: 11,
+                      color: UEColors.pdfFg,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ),
               ],
             ),
-          ] else if (settings.isModelDownloaded) ...[
+          ] else if (model.isDownloaded) ...[
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Status: Fully Offline Capable',
-                  style: UETypography.inter(fontSize: 12, color: UEColors.green, fontWeight: FontWeight.w500),
+                Expanded(
+                  child: isLoadingIntoMemory
+                      ? Row(
+                    children: [
+                      const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Loading into memory…',
+                        style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
+                      ),
+                    ],
+                  )
+                      : GestureDetector(
+                    onTap: isActive ? null : () => modelProvider.setActiveModel(model),
+                    child: Container(
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: isActive ? UEColors.iconBg : UEColors.accent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        isActive ? 'Currently in use' : 'Use this model',
+                        style: UETypography.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: isActive ? UEColors.textMuted : Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
+                const SizedBox(width: 10),
                 GestureDetector(
-                  onTap: () => settings.deleteModel(),
+                  onTap: () => modelProvider.deleteModel(model),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     decoration: BoxDecoration(
                       border: Border.all(color: UEColors.pdfFg, width: 0.5),
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      'Delete Weights',
+                      'Delete',
                       style: UETypography.inter(fontSize: 11, color: UEColors.pdfFg, fontWeight: FontWeight.w500),
                     ),
                   ),
@@ -139,7 +245,7 @@ class SettingsScreen extends StatelessWidget {
             ),
           ] else ...[
             GestureDetector(
-              onTap: () => settings.startModelDownload(),
+              onTap: () => modelProvider.downloadModel(model),
               child: Container(
                 height: 38,
                 width: double.infinity,
@@ -149,7 +255,7 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 child: Center(
                   child: Text(
-                    'Download Local Model Weights',
+                    'Download (${model.sizeMB.toStringAsFixed(0)} MB)',
                     style: UETypography.inter(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -212,7 +318,7 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildSystemInfoCard(BuildContext context) {
+  Widget _buildSystemInfoCard(BuildContext context, OfflineModelProvider modelProvider) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -222,9 +328,18 @@ class SettingsScreen extends StatelessWidget {
       ),
       child: Column(
         children: [
-          _buildInfoRow('Local Storage Used', '11.6 MB / 64 GB'),
+          FutureBuilder<int>(
+            future: modelProvider.getUsedStorageBytes(),
+            builder: (context, snapshot) {
+              final usedMB = ((snapshot.data ?? 0) / (1024 * 1024)).toStringAsFixed(1);
+              return _buildInfoRow('Local Storage Used', '$usedMB MB');
+            },
+          ),
           const SizedBox(height: 10),
-          _buildInfoRow('Server Sync Status', 'Ready (Kiswahili & English packs)'),
+          _buildInfoRow(
+            'Active Model',
+            modelProvider.activeModel?.name ?? 'None loaded',
+          ),
           const SizedBox(height: 10),
           _buildInfoRow('App Version', '1.0.0 (Ubuntu-Edge Custom)'),
         ],
@@ -240,9 +355,12 @@ class SettingsScreen extends StatelessWidget {
           label,
           style: UETypography.inter(fontSize: 12, color: UEColors.textMuted),
         ),
-        Text(
-          value,
-          style: UETypography.inter(fontSize: 12, color: UEColors.textPrimary, fontWeight: FontWeight.w500),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: UETypography.inter(fontSize: 12, color: UEColors.textPrimary, fontWeight: FontWeight.w500),
+          ),
         ),
       ],
     );

@@ -219,7 +219,7 @@ class OfflineAIService {
 
     return generateJson(
       systemPrompt:
-      'You are an expert study assistant. You help students understand '
+          'You are an expert study assistant. You help students understand '
           'academic material clearly and concisely. Always respond with valid '
           'JSON only. No preamble, no explanation, no markdown fences.',
       prompt: '''
@@ -240,14 +240,14 @@ $context
   }
 
   Future<List<Map<String, dynamic>>?> generateFlashcards(
-      List<String> chunks, {
-        int count = 8,
-      }) async {
+    List<String> chunks, {
+    int count = 8,
+  }) async {
     final context = chunks.join('\n\n---\n\n');
 
     final result = await generateJson(
       systemPrompt:
-      'You are a flashcard generator for students. Create clear, concise '
+          'You are a flashcard generator for students. Create clear, concise '
           'question-answer pairs from the provided material. Always respond '
           'with valid JSON only. No preamble or markdown.',
       prompt: '''
@@ -272,14 +272,14 @@ $context
   }
 
   Future<Map<String, dynamic>?> generateStudyPlan(
-      List<String> chunks, {
-        int days = 3,
-      }) async {
+    List<String> chunks, {
+    int days = 3,
+  }) async {
     final context = chunks.take(3).join('\n\n---\n\n');
 
     return generateJson(
       systemPrompt:
-      'You are an academic study planner. Create structured, realistic '
+          'You are an academic study planner. Create structured, realistic '
           'study plans for students. Always respond with valid JSON only.',
       prompt: '''
 Create a $days-day study plan for this material. Return:
@@ -306,10 +306,13 @@ $context
     required String userMessage,
     required List<String> contextChunks,
     required List<Map<String, String>> history,
+    bool socratic = true,
+    String language = 'the same language the student uses',
   }) {
     final context = contextChunks.take(2).join('\n\n---\n\n');
 
-    final recentHistory = history.length > 6 ? history.sublist(history.length - 6) : history;
+    final recentHistory =
+        history.length > 6 ? history.sublist(history.length - 6) : history;
     final historyText = recentHistory.map((m) {
       final role = m['role'] == 'user' ? 'Student' : 'Tutor';
       return '$role: ${m["content"]}';
@@ -319,14 +322,19 @@ $context
 ${historyText.isNotEmpty ? "Previous conversation:\n$historyText\n\n" : ""}Student: $userMessage
 ''';
 
+    final systemPrompt = socratic
+        ? 'You are a Socratic tutor helping a student understand their study '
+            'material. Never give direct answers — instead ask guiding questions '
+            'that help the student think through the problem themselves. '
+            'Be encouraging, patient, and concise. Respond in $language. '
+            'Use this document as your knowledge base:\n\n$context'
+        : 'You are a clear, direct study assistant helping a student understand '
+            'their study material. Answer questions plainly, with worked examples '
+            'where useful. Be encouraging, patient, and concise. Respond in '
+            '$language. Use this document as your knowledge base:\n\n$context';
+
     return generateResponseStream(
-      systemPrompt:
-      'You are a Socratic tutor helping a student understand their study '
-          'material. Never give direct answers — instead ask guiding questions '
-          'that help the student think through the problem themselves. '
-          'Be encouraging, patient, and concise. Respond in the same language '
-          'the student uses. Use this document as your knowledge base:\n\n'
-          '$context',
+      systemPrompt: systemPrompt,
       prompt: prompt,
       maxTokens: 400,
       temperature: 0.8,
@@ -340,7 +348,7 @@ ${historyText.isNotEmpty ? "Previous conversation:\n$historyText\n\n" : ""}Stude
   }) async {
     return generateJson(
       systemPrompt:
-      'You are an exam grader. Grade student answers fairly and provide '
+          'You are an exam grader. Grade student answers fairly and provide '
           'constructive feedback. Always respond with valid JSON only.',
       prompt: '''
 Grade this student answer:
@@ -359,6 +367,78 @@ Return:
 ''',
       maxTokens: 300,
     );
+  }
+
+  Future<String> generateReport({
+    required String topic,
+    required String depth,
+    required String length,
+    required List<String> contextChunks,
+  }) async {
+    final context = contextChunks.join('\n\n---\n\n');
+
+    final depthGuidance = _getDepthGuidance(depth);
+    final lengthGuidance = _getLengthGuidance(length);
+
+    return generateResponse(
+      systemPrompt:
+          'You are a research expert who writes clear, comprehensive reports. '
+          'Your reports are well-structured, accurate, and use the provided '
+          'material as the knowledge base. Write in a professional tone.',
+      prompt: '''
+Write a research report on the following topic:
+
+Topic: $topic
+Depth: $depthGuidance
+Length: $lengthGuidance
+
+Based on this material:
+$context
+
+Structure your report with clear sections including an introduction, main findings, and conclusion.
+''',
+      maxTokens: _getMaxTokensForLength(length),
+      temperature: 0.7,
+    );
+  }
+
+  String _getDepthGuidance(String depth) {
+    switch (depth.toLowerCase()) {
+      case 'shallow':
+        return 'Surface level overview with basic concepts';
+      case 'medium':
+        return 'Moderate depth with key points and explanations';
+      case 'deep':
+        return 'In-depth analysis with detailed explanations and nuances';
+      default:
+        return 'Moderate depth with key points and explanations';
+    }
+  }
+
+  String _getLengthGuidance(String length) {
+    switch (length.toLowerCase()) {
+      case 'short':
+        return 'Concise (2-3 pages equivalent)';
+      case 'medium':
+        return 'Moderate length (4-6 pages equivalent)';
+      case 'long':
+        return 'Comprehensive (7-10 pages equivalent)';
+      default:
+        return 'Moderate length (4-6 pages equivalent)';
+    }
+  }
+
+  int _getMaxTokensForLength(String length) {
+    switch (length.toLowerCase()) {
+      case 'short':
+        return 600;
+      case 'medium':
+        return 1200;
+      case 'long':
+        return 2000;
+      default:
+        return 1200;
+    }
   }
 
   Future<void> stopGeneration() async {

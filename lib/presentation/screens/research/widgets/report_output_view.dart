@@ -6,12 +6,14 @@ import '../../../../core/theme/typography.dart';
 class ReportOutputView extends StatelessWidget {
   final String topic;
   final String content;
+  final List<String> sources;
   final VoidCallback onClear;
 
   const ReportOutputView({
     required this.topic,
     required this.content,
     required this.onClear,
+    this.sources = const [],
     super.key,
   });
 
@@ -101,9 +103,16 @@ class ReportOutputView extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 6),
-                _buildSourcePill('Biochem Lecture Notes — W4.pdf'),
-                const SizedBox(height: 4),
-                _buildSourcePill('Thermodynamics Slides.pptx'),
+                if (sources.isEmpty)
+                  Text(
+                    'No matching documents found in your library — this report is from the model\'s general knowledge.',
+                    style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
+                  )
+                else
+                  ...sources.map((name) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: _buildSourcePill(name),
+                  )),
               ],
             ),
           ),

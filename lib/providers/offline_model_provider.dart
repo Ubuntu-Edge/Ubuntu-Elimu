@@ -87,7 +87,7 @@ class OfflineModelProvider extends ChangeNotifier {
   /// Set active model (will be loaded for inference)
   Future<void> setActiveModel(OfflineModel model) async {
     _error = null;
-    
+
     if (!model.isDownloaded) {
       _error = 'Model must be downloaded first.';
       notifyListeners();
@@ -105,7 +105,7 @@ class OfflineModelProvider extends ChangeNotifier {
       final modelPath = await getModelFullPath(model);
       if (modelPath != null) {
         await _requestModelLoadingPermissions();
-        
+
         final loaded = await OfflineAIService.instance.loadModel(
           modelPath: modelPath,
           model: model,
@@ -128,7 +128,7 @@ class OfflineModelProvider extends ChangeNotifier {
   /// Download a model
   Future<void> downloadModel(OfflineModel model) async {
     _error = null;
-    
+
     final service = ModelDownloadService.instance;
     final downloadStream = service.downloadModel(
       url: model.downloadUrl ?? '',
@@ -138,7 +138,7 @@ class OfflineModelProvider extends ChangeNotifier {
     );
 
     downloadStream.listen(
-      (progress) async {
+          (progress) async {
         if (progress.error != null) {
           _error = progress.error;
           _updateModelProgress(model.id, 0, false);
@@ -157,6 +157,12 @@ class OfflineModelProvider extends ChangeNotifier {
     );
   }
 
+  /// Cancel an in-progress download
+  void cancelDownload(String modelId) {
+    ModelDownloadService.instance.cancelDownload(modelId);
+    _updateModelProgress(modelId, 0, false);
+  }
+
   void _updateModelProgress(String id, double progress, bool downloaded, {String? path}) {
     final index = _models.indexWhere((m) => m.id == id);
     if (index != -1) {
@@ -173,7 +179,7 @@ class OfflineModelProvider extends ChangeNotifier {
     if (model.localPath != null && await File(model.localPath!).exists()) {
       return model.localPath;
     }
-    
+
     final storageDir = await _getModelStorageDirectory();
     final path = '${storageDir.path}/models/${model.author}/${model.filename}';
     if (await File(path).exists()) return path;
@@ -215,14 +221,19 @@ class OfflineModelProvider extends ChangeNotifier {
     if (path != null) {
       await ModelDownloadService.instance.deleteModel(path);
       _updateModelProgress(model.id, 0, false, path: null);
-      
+
       if (_activeModel?.id == model.id) {
         _activeModel = null;
         await OfflineAIService.instance.unloadModel();
       }
-      
+
       await _saveModels();
     }
+  }
+
+  /// Total disk space used by downloaded models, in bytes
+  Future<int> getUsedStorageBytes() {
+    return ModelDownloadService.instance.getModelsDirectorySize();
   }
 
   Future<void> clearActiveModel() async {

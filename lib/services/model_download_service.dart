@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
@@ -34,56 +35,68 @@ class ModelDownloadService {
     required String fileName,
     String author = 'Unknown',
     bool useCompression = true,
-  }) async* {
+  }) {
+    final controller = StreamController<ModelDownloadProgress>();
     final cancelToken = CancelToken();
     _activeDownloads[modelId] = cancelToken;
 
-    try {
-      final storageDir = await _getModelStorageDirectory();
-      final modelsDir = Directory('${storageDir.path}/models/$author');
-      
-      if (!await modelsDir.exists()) {
-        await modelsDir.create(recursive: true);
-      }
+    Future<void> run() async {
+      try {
+        final storageDir = await _getModelStorageDirectory();
+        final modelsDir = Directory('${storageDir.path}/models/$author');
 
-      final savePath = '${modelsDir.path}/$fileName';
-      
-      double lastProgress = 0;
-      
-      final response = await _dio.download(
-        url,
-        savePath,
-        cancelToken: cancelToken,
-        onReceiveProgress: (received, total) {
-          if (total != -1) {
-            lastProgress = received / total;
-          }
-        },
-      );
+        if (!await modelsDir.exists()) {
+          await modelsDir.create(recursive: true);
+        }
 
-      _activeDownloads.remove(modelId);
-      yield ModelDownloadProgress(
-        modelId: modelId,
-        progress: 1.0,
-        filePath: savePath,
-        isCompleted: true,
-      );
-    } catch (e) {
-      _activeDownloads.remove(modelId);
-      if (CancelToken.isCancel(e as DioException)) {
-        yield ModelDownloadProgress(
-          modelId: modelId,
-          progress: 0,
-          error: 'Download cancelled',
+        final savePath = '${modelsDir.path}/$fileName';
+
+        await _dio.download(
+          url,
+          savePath,
+          cancelToken: cancelToken,
+          onReceiveProgress: (received, total) {
+            if (total != -1 && !controller.isClosed) {
+              controller.add(ModelDownloadProgress(
+                modelId: modelId,
+                progress: received / total,
+              ));
+            }
+          },
         );
-      } else {
-        yield ModelDownloadProgress(
-          modelId: modelId,
-          progress: 0,
-          error: 'Download failed: $e',
-        );
+
+        _activeDownloads.remove(modelId);
+        if (!controller.isClosed) {
+          controller.add(ModelDownloadProgress(
+            modelId: modelId,
+            progress: 1.0,
+            filePath: savePath,
+            isCompleted: true,
+          ));
+          await controller.close();
+        }
+      } catch (e) {
+        _activeDownloads.remove(modelId);
+        if (controller.isClosed) return;
+        if (e is DioException && CancelToken.isCancel(e)) {
+          controller.add(ModelDownloadProgress(
+            modelId: modelId,
+            progress: 0,
+            error: 'Download cancelled',
+          ));
+        } else {
+          controller.add(ModelDownloadProgress(
+            modelId: modelId,
+            progress: 0,
+            error: 'Download failed: $e',
+          ));
+        }
+        await controller.close();
       }
     }
+
+    run();
+    return controller.stream;
   }
 
   void cancelDownload(String modelId) {

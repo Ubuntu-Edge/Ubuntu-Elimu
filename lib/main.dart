@@ -10,70 +10,57 @@ import 'providers/settings_provider.dart';
 import 'providers/offline_model_provider.dart';
 import 'services/offline_ai_service.dart';
 
-void main() {
-  runApp(const BootstrapApp());
+void main() async {
+  // 1. Ensure plugin services are native-bound
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // 2. Initialize low-level local storage engines
+  await Hive.initFlutter();
+  await SharedPreferences.getInstance();
+
+  // 3. Instantiate and initialize your critical offline providers
+  final docProvider = DocumentProvider();
+  await docProvider.init();
+
+  await OfflineAIService.instance.initialize();
+
+  final modelProvider = OfflineModelProvider();
+  await modelProvider.initialize();
+
+  final sessionProvider = SessionProvider();
+  await sessionProvider.init();
+
+  // 4. Pass the fully baked providers directly into the App
+  runApp(
+    UbuntuElimuApp(
+      docProvider: docProvider,
+      modelProvider: modelProvider,
+      sessionProvider: sessionProvider,
+    ),
+  );
 }
 
-class BootstrapApp extends StatefulWidget {
-  const BootstrapApp({super.key});
+class UbuntuElimuApp extends StatelessWidget {
+  final DocumentProvider docProvider;
+  final OfflineModelProvider modelProvider;
+  final SessionProvider sessionProvider;
 
-  @override
-  State<BootstrapApp> createState() => _BootstrapAppState();
-}
-
-class _BootstrapAppState extends State<BootstrapApp> {
-  bool _ready = false;
-
-  late DocumentProvider _docProvider;
-  late OfflineModelProvider _modelProvider;
-  late SessionProvider _sessionProvider;
-
-  @override
-  void initState() {
-    super.initState();
-    _init();
-  }
-
-  Future<void> _init() async {
-    // Platform channels are guaranteed ready here
-    await Hive.initFlutter();
-    await SharedPreferences.getInstance();
-
-    _docProvider = DocumentProvider();
-    await _docProvider.init();
-
-    await OfflineAIService.instance.initialize();
-
-    _modelProvider = OfflineModelProvider();
-    await _modelProvider.initialize();
-
-    _sessionProvider = SessionProvider();
-    await _sessionProvider.init();
-
-    setState(() => _ready = true);
-  }
+  const UbuntuElimuApp({
+    super.key,
+    required this.docProvider,
+    required this.modelProvider,
+    required this.sessionProvider,
+  });
 
   @override
   Widget build(BuildContext context) {
-    if (!_ready) {
-      return const MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(
-          backgroundColor: Color(0xFF0D0F14),
-          body: Center(
-            child: CircularProgressIndicator(color: Colors.white),
-          ),
-        ),
-      );
-    }
-
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => NavigationProvider()),
-        ChangeNotifierProvider.value(value: _sessionProvider),
-        ChangeNotifierProvider.value(value: _docProvider),
+        ChangeNotifierProvider.value(value: sessionProvider),
+        ChangeNotifierProvider.value(value: docProvider),
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
-        ChangeNotifierProvider.value(value: _modelProvider),
+        ChangeNotifierProvider.value(value: modelProvider),
       ],
       child: MaterialApp(
         title: 'Ubuntu Elimu',

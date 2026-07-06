@@ -1,26 +1,29 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 
+/// Supported execution backends for the AI architecture.
+enum AIBackend { local, groq }
+
+/// Holds user-facing preferences that aren't tied to model state.
+/// Model download/selection/deletion now lives in OfflineModelProvider —
+/// see settings_screen.dart, which reads that provider directly.
 class SettingsProvider with ChangeNotifier {
   bool _socraticMode = true;
   bool _powerMode = true;
   String _sourceLanguage = 'EN';
   String _targetLanguage = 'SW';
 
-  // Offline models statuses
-  bool _isModelDownloaded = false;
-  bool _isDownloading = false;
-  double _downloadProgress = 0.0;
-  final String _modelName = 'Socratic-Mini-7B-Quantized (1.4 GB)';
+  // New backend state tracking
+  AIBackend _activeBackend = AIBackend.local;
+  String _groqApiKey = '';
 
   bool get socraticMode => _socraticMode;
   bool get powerMode => _powerMode;
   String get sourceLanguage => _sourceLanguage;
   String get targetLanguage => _targetLanguage;
-  bool get isModelDownloaded => _isModelDownloaded;
-  bool get isDownloading => _isDownloading;
-  double get downloadProgress => _downloadProgress;
-  String get modelName => _modelName;
+
+  // New Getters
+  AIBackend get activeBackend => _activeBackend;
+  String get groqApiKey => _groqApiKey;
 
   void toggleSocraticMode(bool value) {
     _socraticMode = value;
@@ -38,48 +41,14 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void startModelDownload() {
-    if (_isModelDownloaded || _isDownloading) return;
-    _isDownloading = true;
-    _downloadProgress = 0.0;
-    notifyListeners();
-
-    // Simulate downloading progress
-    int steps = 20;
-    int currentStep = 0;
-    StreamPeriodically(const Duration(milliseconds: 150), (timer) {
-      currentStep++;
-      _downloadProgress = currentStep / steps;
-      if (currentStep >= steps) {
-        timer.cancel();
-        _isDownloading = false;
-        _isModelDownloaded = true;
-        _downloadProgress = 1.0;
-      }
-      notifyListeners();
-    });
-  }
-
-  void deleteModel() {
-    _isModelDownloaded = false;
-    _downloadProgress = 0.0;
+  // New Methods to resolve compilation errors
+  void setActiveBackend(AIBackend backend) {
+    _activeBackend = backend;
     notifyListeners();
   }
-}
 
-// Simple periodic helper class since timer in microtask can be cleaner
-class StreamPeriodically {
-  final Duration duration;
-  final void Function(StreamPeriodically timer) callback;
-  late Timer _timer;
-
-  StreamPeriodically(this.duration, this.callback) {
-    _timer = Timer.periodic(duration, (t) {
-      callback(this);
-    });
-  }
-
-  void cancel() {
-    _timer.cancel();
+  void setGroqApiKey(String value) {
+    _groqApiKey = value;
+    notifyListeners();
   }
 }

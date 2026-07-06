@@ -1,13 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
 import '../../../models/chat_message.dart';
 import '../../../models/document.dart';
+import '../../../models/offline_model.dart';
+import '../../../providers/session_provider.dart';
+import '../../../providers/document_provider.dart';
+import '../../../providers/offline_model_provider.dart';
+import '../../../providers/settings_provider.dart';
 import 'widgets/doc_context_bar.dart';
 import 'widgets/model_lang_controls.dart';
 import 'widgets/chat_bubble.dart';
 import 'widgets/chat_input_bar.dart';
 import 'widgets/language_sheet.dart';
+
+// Maps the two Model pills to real catalog entries in default_offline_models.dart.
+const String _liteModelId = 'llama-3.2-1b-q8';
+const String _powerModelId = 'llama-3.2-3b-q4';
 
 class TutorScreen extends StatefulWidget {
   const TutorScreen({super.key});
@@ -19,66 +29,10 @@ class TutorScreen extends StatefulWidget {
 class _TutorScreenState extends State<TutorScreen> {
   final ScrollController _scrollController = ScrollController();
 
-  ModelMode _model = ModelMode.power;
-  Language _language = Language.swahili;
-  bool _socraticMode = true;
-  bool _isTyping = false;
-
-  // Stub active document
-  final Document _activeDoc = Document(
-    id: '1',
-    name: 'Organic Chemistry — Ch.7.pdf',
-    type: DocType.pdf,
-    sizeBytes: 2400000,
-    addedAt: DateTime.now(),
-    pageCount: 22,
-  );
-
-  // Stub messages
-  late final List<ChatMessage> _messages = [
-    ChatMessage(
-      id: '1',
-      role: MessageRole.user,
-      content:
-      "I don't understand how nucleophilic substitution works. Can you just explain it to me?",
-      timestamp: DateTime.now().subtract(const Duration(minutes: 3)),
-    ),
-    ChatMessage(
-      id: '2',
-      role: MessageRole.ai,
-      content:
-      'Kabla sijaeleza — hebu niulize kwanza.\n\nUkiwa na kitu kinachohitaji elektroni — na kitu kingine chenye elektroni nyingi — unafikiria nini kitatokea unapozileta pamoja?',
-      timestamp: DateTime.now().subtract(const Duration(minutes: 3)),
-      language: Language.swahili,
-      model: ModelMode.power,
-      citation: const CitationRef(
-        docName: 'Ch.7',
-        page: 4,
-        excerpt: 'Nucleophiles and electrophiles',
-      ),
-    ),
-    ChatMessage(
-      id: '3',
-      role: MessageRole.user,
-      content:
-      'Nadhani itavutana... elektroni itaenda kwa kitu kinachohitaji?',
-      timestamp: DateTime.now().subtract(const Duration(minutes: 1)),
-    ),
-    ChatMessage(
-      id: '4',
-      role: MessageRole.ai,
-      content:
-      'Exactly right. That pull is the core of every SN reaction.\n\nNow — what do you think determines how fast that substitution happens? Think about what might get in the way.',
-      timestamp: DateTime.now().subtract(const Duration(minutes: 1)),
-      language: Language.english,
-      model: ModelMode.power,
-      citation: const CitationRef(
-        docName: 'Ch.7',
-        page: 7,
-        excerpt: 'Reaction rate factors',
-      ),
-    ),
-  ];
+  // Language has no backend persistence yet — kept as local UI state and
+  // passed straight into SessionProvider.sendMessage() per message.
+  Language _language = Language.english;
+  int _lastMessageCount = 0;
 
   @override
   void dispose() {
@@ -98,49 +52,91 @@ class _TutorScreenState extends State<TutorScreen> {
     });
   }
 
-  void _handleSend(String text) {
-    setState(() {
-      _messages.add(ChatMessage(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        role: MessageRole.user,
-        content: text,
-        timestamp: DateTime.now(),
-      ));
-      _isTyping = true;
-    });
+  void _handleSend(SessionProvider session, DocumentProvider docs, bool socratic, String text) {
+    session.sendMessage(
+      text,
+      docProvider: docs,
+      socratic: socratic,
+      language: _language.fullName,
+    );
     _scrollToBottom();
-
-    // Stub AI response delay — replace with real inference later
-    Future.delayed(const Duration(seconds: 2), () {
-      if (!mounted) return;
-      setState(() {
-        _isTyping = false;
-        _messages.add(ChatMessage(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          role: MessageRole.ai,
-          content:
-          'Good question. Before I answer — what do you already know about that concept? Walk me through your current understanding.',
-          timestamp: DateTime.now(),
-          language: _language,
-          model: _model,
-        ));
-      });
-      _scrollToBottom();
-    });
   }
 
-  void _showDocPicker() {
-    // TODO: open library screen / doc picker sheet
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Doc picker coming — wire to Library screen'),
-        backgroundColor: UEColors.bgCard,
+  void _showDocPicker(BuildContext context, SessionProvider session, DocumentProvider docs) {
+    if (docs.documents.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No documents yet — add one from the Library tab first.'),
+          backgroundColor: UEColors.bgCard,
+        ),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: UEColors.bgCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Study with a document', style: UETypography.h3),
+              const SizedBox(height: 12),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 320),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: docs.documents.length,
+                  separatorBuilder: (_, __) => const Divider(color: UEColors.border, height: 1),
+                  itemBuilder: (_, i) {
+                    final doc = docs.documents[i];
+                    return ListTile(
+                      leading: Icon(_iconForType(doc.type), color: UEColors.textMuted),
+                      title: Text(doc.name, style: UETypography.bodyMd),
+                      subtitle: Text(
+                        doc.isProcessed ? 'Ready' : 'Still processing…',
+                        style: UETypography.caption,
+                      ),
+                      onTap: doc.isProcessed
+                          ? () {
+                        session.setActiveDocument(doc.id, doc.name);
+                        Navigator.pop(sheetContext);
+                      }
+                          : null,
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
+  IconData _iconForType(DocType type) {
+    switch (type) {
+      case DocType.pdf:
+        return Icons.picture_as_pdf_rounded;
+      case DocType.pptx:
+        return Icons.slideshow_rounded;
+      case DocType.docx:
+        return Icons.description_rounded;
+      default:
+        return Icons.insert_drive_file_rounded;
+    }
+  }
+
   void _openCitation(CitationRef citation) {
-    // TODO: open document at page
+    // Real inference doesn't produce structured citations yet — tutorStream
+    // returns plain text. Wiring this properly means having the model emit
+    // a page/quote reference alongside its answer. Left as a follow-up.
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Opening ${citation.docName} p.${citation.page}'),
@@ -149,8 +145,46 @@ class _TutorScreenState extends State<TutorScreen> {
     );
   }
 
+  void _handleModelChange(BuildContext context, OfflineModelProvider modelProvider, ModelMode mode) {
+    final targetId = mode == ModelMode.power ? _powerModelId : _liteModelId;
+    final target = modelProvider.models.where((m) => m.id == targetId).firstOrNull;
+
+    if (target == null) return;
+
+    if (!target.isDownloaded) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${target.name} isn\'t downloaded yet — grab it in Settings first.'),
+          backgroundColor: UEColors.bgCard,
+        ),
+      );
+      return;
+    }
+
+    modelProvider.setActiveModel(target);
+  }
+
+  ModelMode _modeForActiveModel(OfflineModel? active) {
+    if (active?.id == _powerModelId) return ModelMode.power;
+    return ModelMode.lite;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final session = context.watch<SessionProvider>();
+    final docs = context.watch<DocumentProvider>();
+    final modelProvider = context.watch<OfflineModelProvider>();
+    final settings = context.watch<SettingsProvider>();
+
+    if (session.chatMessages.length != _lastMessageCount) {
+      _lastMessageCount = session.chatMessages.length;
+      _scrollToBottom();
+    }
+
+    final activeDoc = session.activeDocumentId == null
+        ? null
+        : docs.documents.where((d) => d.id == session.activeDocumentId).firstOrNull;
+
     return Scaffold(
       backgroundColor: UEColors.bgPrimary,
       body: SafeArea(
@@ -158,43 +192,64 @@ class _TutorScreenState extends State<TutorScreen> {
         child: Column(
           children: [
             _TopBar(onBack: () => Navigator.maybePop(context)),
-            _TopControls(
-              activeDoc: _activeDoc,
-              model: _model,
-              language: _language,
-              socraticMode: _socraticMode,
-              onChangeTap: _showDocPicker,
-              onModelChanged: (m) => setState(() => _model = m),
-              onLanguageTap: () => LanguageSheet.show(
-                context,
-                current: _language,
-                onSelected: (l) => setState(() => _language = l),
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: UEColors.bgCard, width: 0.5)),
+              ),
+              child: Column(
+                children: [
+                  DocContextBar(
+                    activeDoc: activeDoc,
+                    onChangeTap: () => _showDocPicker(context, session, docs),
+                  ),
+                  const SizedBox(height: 10),
+                  ModelLangControls(
+                    selectedModel: _modeForActiveModel(modelProvider.activeModel),
+                    selectedLanguage: _language,
+                    socraticMode: settings.socraticMode,
+                    onModelChanged: (m) => _handleModelChange(context, modelProvider, m),
+                    onLanguageTap: () => LanguageSheet.show(
+                      context,
+                      current: _language,
+                      onSelected: (l) => setState(() => _language = l),
+                    ),
+                  ),
+                ],
               ),
             ),
+            if (!modelProvider.hasActiveModel)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                color: UEColors.pdfBg,
+                child: Text(
+                  'No model loaded — go to Settings to download and activate one.',
+                  style: UETypography.inter(fontSize: 11, color: UEColors.pdfFg),
+                ),
+              ),
             const _SessionDivider(),
             Expanded(
               child: ListView.separated(
                 controller: _scrollController,
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-                itemCount: _messages.length + (_isTyping ? 1 : 0),
+                itemCount: session.chatMessages.length + (session.isGenerating ? 1 : 0),
                 separatorBuilder: (_, __) => const SizedBox(height: 16),
                 itemBuilder: (context, index) {
-                  if (index == _messages.length) {
+                  if (index == session.chatMessages.length) {
                     return const TypingIndicator();
                   }
-                  final msg = _messages[index];
+                  final msg = session.chatMessages[index];
                   return ChatBubble(
                     message: msg,
-                    onCitationTap: msg.citation != null
-                        ? () => _openCitation(msg.citation!)
-                        : null,
+                    onCitationTap: msg.citation != null ? () => _openCitation(msg.citation!) : null,
                   );
                 },
               ),
             ),
             ChatInputBar(
-              onSend: _handleSend,
-              isTyping: _isTyping,
+              onSend: (text) => _handleSend(session, docs, settings.socraticMode, text),
+              isTyping: session.isGenerating,
             ),
           ],
         ),
@@ -229,54 +284,6 @@ class _TopBar extends StatelessWidget {
             Icons.more_horiz_rounded,
             color: UEColors.textMuted,
             size: 22,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TopControls extends StatelessWidget {
-  final Document? activeDoc;
-  final ModelMode model;
-  final Language language;
-  final bool socraticMode;
-  final VoidCallback onChangeTap;
-  final ValueChanged<ModelMode> onModelChanged;
-  final VoidCallback onLanguageTap;
-
-  const _TopControls({
-    required this.activeDoc,
-    required this.model,
-    required this.language,
-    required this.socraticMode,
-    required this.onChangeTap,
-    required this.onModelChanged,
-    required this.onLanguageTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: UEColors.bgCard, width: 0.5),
-        ),
-      ),
-      child: Column(
-        children: [
-          DocContextBar(
-            activeDoc: activeDoc,
-            onChangeTap: onChangeTap,
-          ),
-          const SizedBox(height: 10),
-          ModelLangControls(
-            selectedModel: model,
-            selectedLanguage: language,
-            socraticMode: socraticMode,
-            onModelChanged: onModelChanged,
-            onLanguageTap: onLanguageTap,
           ),
         ],
       ),
