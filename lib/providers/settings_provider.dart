@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'offline_model_provider.dart';
 import '../models/offline_model.dart';
 import '../services/ai/base_ai_provider.dart';
@@ -16,79 +16,73 @@ class SettingsProvider with ChangeNotifier {
 
   // Reference to the real model provider
   OfflineModelProvider? _modelProvider;
+  late Box _settingsBox;
+  bool _isInitialized = false;
 
   bool get socraticMode => _socraticMode;
   bool get powerMode => _powerMode;
   AIBackend get activeBackend => _activeBackend;
+  bool get isInitialized => _isInitialized;
 
-  // Delegate all model state to OfflineModelProvider
-  bool get isModelDownloaded => _modelProvider?.models.any((m) => m.isDownloaded) ?? false;
-  bool get isDownloading => _modelProvider?.models.any((m) => m.downloadProgress > 0 && m.downloadProgress < 1.0) ?? false;
-  double get downloadProgress {
-    final downloading = _modelProvider?.models
-        .where((m) => m.downloadProgress > 0 && m.downloadProgress < 1.0)
-        .firstOrNull;
-    return downloading?.downloadProgress ?? 0.0;
+  SettingsProvider() {
+    _init();
   }
+
+  Future<void> _init() async {
+    _settingsBox = await Hive.openBox('settings');
+    
+    _socraticMode = _settingsBox.get('socraticMode', defaultValue: true);
+    _powerMode = _settingsBox.get('powerMode', defaultValue: true);
+    
+    // Default to Groq (Proxy) if no preference saved
+    final backendIndex = _settingsBox.get('activeBackend', defaultValue: AIBackend.groq.index);
+    _activeBackend = AIBackend.values[backendIndex];
+    
+    _isInitialized = true;
+    notifyListeners();
+  }
+
+  bool get isModelDownloaded => _modelProvider?.models.any((m) => m.isDownloaded) ?? false;
+  
   String get modelName {
-    if (_activeBackend == AIBackend.groq) return 'Groq (Cloud)';
+    if (_activeBackend == AIBackend.groq) return 'Groq (Secure Proxy)';
     final active = _modelProvider?.activeModel;
     if (active != null) return active.name;
     return _modelProvider?.models.firstOrNull?.name ?? 'No model selected';
   }
 
-  /// Returns the appropriate AI provider based on current settings
   AIProvider getAIProvider() {
     if (_activeBackend == AIBackend.groq) {
-      // Use environment variable for the API key
-      const apiKey = String.fromEnvironment('GROQ_API_KEY');
-      if (apiKey.isNotEmpty) {
-        return GroqAIProvider(apiKey);
-      }
-      // Fallback to runtime environment variable (e.g. for local dev/testing)
-      final envKey = Platform.environment['GROQ_API_KEY'] ?? '';
-      return GroqAIProvider(envKey);
+      // 🔒 No API Key passed here! The provider talks to your server.
+      return GroqAIProvider();
     }
     return LocalAIProvider();
   }
 
   void setAIBackend(AIBackend backend) {
     _activeBackend = backend;
+    _settingsBox.put('activeBackend', backend.index);
     notifyListeners();
   }
 
-  /// Call this from the UI or main.dart after providers are set up
   void attachModelProvider(OfflineModelProvider provider) {
     _modelProvider = provider;
     provider.addListener(_onModelProviderChanged);
     notifyListeners();
   }
 
-  void _onModelProviderChanged() {
-    notifyListeners(); // bubble up changes from OfflineModelProvider
-  }
+  void _onModelProviderChanged() => notifyListeners();
 
   void toggleSocraticMode(bool value) {
     _socraticMode = value;
+    _settingsBox.put('socraticMode', value);
     notifyListeners();
   }
 
   void togglePowerMode(bool value) {
     _powerMode = value;
+    _settingsBox.put('powerMode', value);
     notifyListeners();
-  }
-
-  void startModelDownload() {
-    final model = _modelProvider?.models.firstOrNull;
-    if (model == null || model.isDownloaded) return;
-    _modelProvider?.startDownload(model); // Updated to handle listener state internally
-  }
-
-  void deleteModel() {
-    final model = _modelProvider?.models.where((m) => m.isDownloaded).firstOrNull;
-    if (model != null) {
-      _modelProvider?.deleteModel(model);
-    }
   }
 
   @override

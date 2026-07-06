@@ -115,6 +115,21 @@ class _TutorScreenState extends State<TutorScreen> {
       _scrollToBottom();
       return;
     }
+    
+    if (settings.activeBackend == AIBackend.groq && settings.groqApiKey.isEmpty) {
+      setState(() {
+        _messages.add(ChatMessage(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          role: MessageRole.ai,
+          content: '⚠️ Groq API key is missing. Please check your settings.',
+          timestamp: DateTime.now(),
+          model: _model,
+          language: _language,
+        ));
+      });
+      _scrollToBottom();
+      return;
+    }
 
     final aiMessageId = DateTime.now().millisecondsSinceEpoch.toString();
 
@@ -233,7 +248,6 @@ class _TutorScreenState extends State<TutorScreen> {
     return Scaffold(
       backgroundColor: UEColors.bgPrimary,
       body: SafeArea(
-        bottom: false,
         child: Column(
           children: [
             _TopBar(onBack: () => Navigator.maybePop(context)),
@@ -278,8 +292,6 @@ class _TutorScreenState extends State<TutorScreen> {
     );
   }
 }
-
-// ── Supporting widgets (unchanged) ──────────────────────────────────────────
 
 class _TopBar extends StatelessWidget {
   final VoidCallback onBack;
@@ -356,14 +368,47 @@ class _SessionDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Text(
-        'Session started · Today',
-        style: UETypography.caption
-            .copyWith(color: UEColors.textDim, fontSize: 11),
-        textAlign: TextAlign.center,
-      ),
+    return Consumer<SettingsProvider>(
+      builder: (context, settings, child) {
+        final isLocal = settings.activeBackend == AIBackend.local;
+        final hasEngine = isLocal ? OfflineAIService.instance.isModelLoaded : settings.groqApiKey.isNotEmpty;
+        final engineName = isLocal ? 'Local LLM' : 'Groq Cloud';
+        
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            children: [
+              Text(
+                'Session started · Today',
+                style: UETypography.caption.copyWith(color: UEColors.textDim, fontSize: 11),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: hasEngine ? Colors.green : Colors.amber,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    hasEngine ? '$engineName Active' : 'No Engine Active',
+                    style: UETypography.caption.copyWith(
+                      color: UEColors.textMuted,
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

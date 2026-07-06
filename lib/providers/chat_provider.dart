@@ -9,11 +9,13 @@ import 'settings_provider.dart';
 class ChatProvider with ChangeNotifier {
   final Uuid _uuid = const Uuid();
 
+  AIProvider _aiProvider;          // ← store the provider directly
+
   List<ChatMessage> _messages = [];
   bool _isLoading = false;
   String? _currentSessionId;
   bool _isInitialized = false;
-  
+
   late Box _chatBox;
 
   List<ChatMessage> get messages => _messages;
@@ -21,14 +23,13 @@ class ChatProvider with ChangeNotifier {
   String? get sessionId => _currentSessionId;
   bool get isInitialized => _isInitialized;
 
-  AIProvider _aiProvider;
-
-  ChatProvider(this._aiProvider) {
+  ChatProvider(this._aiProvider) {  // ← accept AIProvider
     _initialize();
   }
 
-  void updateAIProvider(AIProvider newProvider) {
-    _aiProvider = newProvider;
+  // ← called by ProxyProvider when SettingsProvider changes
+  void updateAIProvider(AIProvider provider) {
+    _aiProvider = provider;
     notifyListeners();
   }
 
@@ -71,6 +72,7 @@ class ChatProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // ← removed SettingsProvider param; uses _aiProvider directly
   Future<void> sendMessage(String text, SettingsProvider settings, {String? systemPrompt}) async {
     if (text.isEmpty) return;
 
@@ -95,28 +97,31 @@ class ChatProvider with ChangeNotifier {
     notifyListeners();
 
     final aiResponseId = _uuid.v4();
-    final aiResponse = ChatMessage(
+    _messages.add(ChatMessage(
       id: aiResponseId,
       role: MessageRole.ai,
       content: '',
       timestamp: DateTime.now(),
-    );
-    _messages.add(aiResponse);
+    ));
     notifyListeners();
 
     try {
-      final aiProvider = _aiProvider;
-      
-      // If using local, check if model is loaded
       if (settings.activeBackend == AIBackend.local && !settings.isModelDownloaded) {
-         _updateMessage(aiResponseId, 'No offline model loaded. Please download a model in Settings first.');
+        _updateMessage(aiResponseId, 'No offline model loaded. Please download a model in Settings first.');
         _isLoading = false;
         notifyListeners();
         return;
       }
 
-      await _handleAIResponse(aiProvider, text, aiResponseId, systemPrompt);
-      
+      if (settings.activeBackend == AIBackend.groq && settings.groqApiKey.isEmpty) {
+        _updateMessage(aiResponseId, 'Groq API key not set. Please add your key in Settings.');
+        _isLoading = false;
+        notifyListeners();
+        return;
+      }
+
+      await _handleAIResponse(text, aiResponseId, systemPrompt);  // ← no longer passes provider
+
     } catch (e) {
       _updateMessage(aiResponseId, "Sorry, an error occurred: $e");
     } finally {
@@ -138,14 +143,14 @@ class ChatProvider with ChangeNotifier {
     }
   }
 
-  Future<void> _handleAIResponse(AIProvider aiProvider, String text, String aiResponseId, String? systemPrompt) async {
+  Future<void> _handleAIResponse(String text, String aiResponseId, String? systemPrompt) async {
     try {
       final effectiveSystemPrompt = systemPrompt ??
           'You are a helpful study assistant. Guide the student through their learning material.';
 
       String currentResponse = '';
 
-      await for (var token in aiProvider.streamGenerate(
+      await for (var token in _aiProvider.streamGenerate(  // ← uses _aiProvider
         text,
         systemPrompt: effectiveSystemPrompt,
       )) {

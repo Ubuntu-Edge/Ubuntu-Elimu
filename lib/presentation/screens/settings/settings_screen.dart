@@ -29,6 +29,12 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 10),
           _buildPreferenceSwitches(context, settings),
           const SizedBox(height: 24),
+          if (settings.activeBackend == AIBackend.groq) ...[
+            _buildSectionTitle('GROQ CONFIGURATION'),
+            const SizedBox(height: 10),
+            _buildGroqConfigCard(context, settings),
+            const SizedBox(height: 24),
+          ],
           _buildSectionTitle('LOCAL SYSTEM INFO'),
           const SizedBox(height: 10),
           _buildSystemInfoCard(context),
@@ -187,6 +193,61 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGroqConfigCard(BuildContext context, SettingsProvider settings) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: UEColors.surface,
+        border: Border.all(color: UEColors.border, width: 0.5),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Groq API Key',
+            style: UETypography.spaceGrotesk(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: UEColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            obscureText: true,
+            onChanged: (val) => settings.setGroqApiKey(val),
+            controller: TextEditingController(text: settings.groqApiKey)..selection = TextSelection.fromPosition(TextPosition(offset: settings.groqApiKey.length)),
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+            decoration: InputDecoration(
+              hintText: 'gsk_...',
+              hintStyle: TextStyle(color: UEColors.textMuted.withOpacity(0.5)),
+              filled: true,
+              fillColor: UEColors.bgPrimary,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: UEColors.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: UEColors.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: UEColors.accent),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Get your free API key at console.groq.com. Your key is stored securely on your device.',
+            style: UETypography.inter(fontSize: 10, color: UEColors.textMuted),
           ),
         ],
       ),

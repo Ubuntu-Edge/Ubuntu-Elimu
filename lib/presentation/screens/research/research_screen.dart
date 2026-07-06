@@ -50,7 +50,7 @@ class _ResearchScreenState extends State<ResearchScreen> {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
           duration: const Duration(milliseconds: 400),
-          curve: Curves.easeOutCubic, // Smoother ChatGPT-style scroll animation
+          curve: Curves.easeOutCubic,
         );
       }
     });
@@ -91,7 +91,20 @@ class _ResearchScreenState extends State<ResearchScreen> {
       return;
     }
 
-    // Add empty AI message to stream tokens into
+    if (settings.activeBackend == AIBackend.groq && settings.groqApiKey.isEmpty) {
+      setState(() {
+        _isTyping = false;
+        _messages.add(ChatMessage(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          role: MessageRole.ai,
+          content: '⚠️ Groq API key is missing. Please check your settings.',
+          timestamp: DateTime.now(),
+        ));
+      });
+      _scrollToBottom();
+      return;
+    }
+
     final aiMessageId = DateTime.now().millisecondsSinceEpoch.toString();
     setState(() {
       _isTyping = false;
@@ -109,7 +122,7 @@ class _ResearchScreenState extends State<ResearchScreen> {
     );
 
     stream.listen(
-          (token) {
+      (token) {
         if (!mounted) return;
         setState(() {
           final index = _messages.indexWhere((m) => m.id == aiMessageId);
@@ -164,80 +177,87 @@ class _ResearchScreenState extends State<ResearchScreen> {
   }
 
   Widget _buildHeader() {
-    final hasModel = OfflineAIService.instance.isModelLoaded;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-      decoration: BoxDecoration(
-        color: UEColors.bgPrimary,
-        border: Border(
-          bottom: BorderSide(color: UEColors.bgCard, width: 0.5),
-        ),
-      ),
-      child: SafeArea(
-        bottom: false,
-        child: Row(
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return Consumer<SettingsProvider>(
+      builder: (context, settings, child) {
+        final isLocal = settings.activeBackend == AIBackend.local;
+        final hasEngine = isLocal ? OfflineAIService.instance.isModelLoaded : settings.groqApiKey.isNotEmpty;
+        final engineName = isLocal ? 'Local LLM' : 'Groq Cloud';
+        
+        return Container(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+          decoration: BoxDecoration(
+            color: UEColors.bgPrimary,
+            border: Border(
+              bottom: BorderSide(color: UEColors.bgCard, width: 0.5),
+            ),
+          ),
+          child: SafeArea(
+            bottom: false,
+            child: Row(
               children: [
-                Row(
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Study Companion', style: UETypography.h3),
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: UEColors.indigo.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        hasModel ? 'Local LLM' : 'No Engine',
-                        style: UETypography.caption.copyWith(
-                          color: UEColors.indigo,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10,
+                    Row(
+                      children: [
+                        Text('Study Companion', style: UETypography.h3),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: UEColors.indigo.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            hasEngine ? engineName : 'No Engine',
+                            style: UETypography.caption.copyWith(
+                              color: UEColors.indigo,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10,
+                            ),
+                          ),
                         ),
-                      ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: hasEngine ? Colors.green : Colors.amber,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          hasEngine ? 'Active & Ready' : 'Engine Offline',
+                          style: UETypography.caption.copyWith(
+                            color: UEColors.textDim,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        color: hasModel ? Colors.green : Colors.amber,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      hasModel ? 'Offline & Active' : 'Model Offline',
-                      style: UETypography.caption.copyWith(
-                        color: UEColors.textDim,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded, color: UEColors.textDim, size: 20),
+                  tooltip: 'Clear Chat',
+                  onPressed: () {
+                    setState(() {
+                      _messages.clear();
+                      _addWelcomeMessage();
+                    });
+                  },
                 ),
               ],
             ),
-            const Spacer(),
-            IconButton(
-              icon: const Icon(Icons.refresh_rounded, color: UEColors.textDim, size: 20),
-              tooltip: 'Clear Chat',
-              onPressed: () {
-                setState(() {
-                  _messages.clear();
-                  _addWelcomeMessage();
-                });
-              },
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

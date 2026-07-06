@@ -2,64 +2,61 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'base_ai_provider.dart';
 
+/// SECURE PROXY VERSION (Option 3)
+/// The API Key is GONE from this code. It lives safely on your server.
 class GroqAIProvider implements AIProvider {
-  final String apiKey;
   final Dio _dio = Dio();
-  final String _model = 'llama-3.1-70b-versatile';
+  
+  // 🌍 ACTION REQUIRED: Replace this with your deployed proxy URL
+  // While testing locally with the Node.js server, use 'http://10.0.2.2:3000'
+  final String _proxyUrl = 'https://your-deployed-proxy.com'; 
+  
+  final String _model = 'llama-3.3-70b-versatile';
 
-  GroqAIProvider(this.apiKey);
+  GroqAIProvider();
 
   @override
   Future<String> generate(
     String prompt, {
-    String systemPrompt = '',
+    required String systemPrompt,
     int maxTokens = 512,
     double temperature = 0.7,
   }) async {
     try {
       final response = await _dio.post(
-        'https://api.groq.com/openai/v1/chat/completions',
-        options: Options(headers: {
-          'Authorization': 'Bearer $apiKey',
-          'Content-Type': 'application/json',
-        }),
+        '$_proxyUrl/v1/chat/completions',
         data: {
           'model': _model,
           'messages': [
-            if (systemPrompt.isNotEmpty) {'role': 'system', 'content': systemPrompt},
+            {'role': 'system', 'content': systemPrompt},
             {'role': 'user', 'content': prompt},
           ],
           'max_tokens': maxTokens,
           'temperature': temperature,
         },
       );
+      // The proxy returns the standard Groq response format
       return response.data['choices'][0]['message']['content'];
     } catch (e) {
-      return 'Error connecting to Groq: $e';
+      return 'Proxy Error: Could not connect to AI service.';
     }
   }
 
   @override
   Stream<String> streamGenerate(
     String prompt, {
-    String systemPrompt = '',
+    required String systemPrompt,
     int maxTokens = 512,
     double temperature = 0.7,
   }) async* {
     try {
       final response = await _dio.post(
-        'https://api.groq.com/openai/v1/chat/completions',
-        options: Options(
-          headers: {
-            'Authorization': 'Bearer $apiKey',
-            'Content-Type': 'application/json',
-          },
-          responseType: ResponseType.stream,
-        ),
+        '$_proxyUrl/v1/chat/completions',
+        options: Options(responseType: ResponseType.stream),
         data: {
           'model': _model,
           'messages': [
-            if (systemPrompt.isNotEmpty) {'role': 'system', 'content': systemPrompt},
+            {'role': 'system', 'content': systemPrompt},
             {'role': 'user', 'content': prompt},
           ],
           'max_tokens': maxTokens,
@@ -68,8 +65,12 @@ class GroqAIProvider implements AIProvider {
         },
       );
 
-      final stream = response.data.stream;
-      await for (final chunk in stream.transform(utf8.decoder).transform(const LineSplitter())) {
+      // Cast to ResponseBody first, then stream to correct type
+      final stream = (response.data as ResponseBody).stream;
+      await for (final chunk in stream
+          .cast<List<int>>()
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
         if (chunk.isEmpty) continue;
         if (chunk.startsWith('data: ')) {
           final data = chunk.substring(6);
@@ -82,19 +83,19 @@ class GroqAIProvider implements AIProvider {
         }
       }
     } catch (e) {
-      yield 'Error streaming from Groq: $e';
+      yield 'Streaming failed. Proxy may be offline.';
     }
   }
 
   @override
   Future<Map<String, dynamic>?> generateJson(
     String prompt, {
-    String systemPrompt = '',
+    required String systemPrompt,
     int maxTokens = 800,
   }) async {
     final raw = await generate(
       prompt,
-      systemPrompt: systemPrompt,
+      systemPrompt: '$systemPrompt\n\nIMPORTANT: Return ONLY valid JSON.',
       maxTokens: maxTokens,
     );
     try {

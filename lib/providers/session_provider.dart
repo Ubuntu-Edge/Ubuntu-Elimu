@@ -122,15 +122,7 @@ class SessionProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final aiProvider = settings.getAIProvider();
-
-      // Get relevant chunks if a document is selected
-      List<String> chunks = [];
-      if (_activeDocumentId != null) {
-        chunks = docProvider.getRelevantChunks(_activeDocumentId!, text);
-      }
-
-      // Check model availability if local
+      // Check local model availability
       if (settings.activeBackend == AIBackend.local && !settings.isModelDownloaded) {
         _updateLastMessage(
           'No model loaded. Please go to Settings and download a model first.',
@@ -138,6 +130,24 @@ class SessionProvider with ChangeNotifier {
         _isGenerating = false;
         notifyListeners();
         return;
+      }
+
+      // Check Groq API Key availability
+      if (settings.activeBackend == AIBackend.groq && settings.groqApiKey.isEmpty) {
+        _updateLastMessage(
+          'Groq API key not set. Please add your key in Settings to use cloud inference.',
+        );
+        _isGenerating = false;
+        notifyListeners();
+        return;
+      }
+
+      final aiProvider = settings.getAIProvider();
+
+      // Get relevant chunks if a document is selected
+      List<String> chunks = [];
+      if (_activeDocumentId != null) {
+        chunks = docProvider.getRelevantChunks(_activeDocumentId!, text);
       }
 
       // Construct Socratic Tutor Prompt

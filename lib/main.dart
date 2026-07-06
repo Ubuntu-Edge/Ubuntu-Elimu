@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'app.dart';
 import 'presentation/navigation/main_shell.dart';
 import 'providers/navigation_provider.dart';
 import 'providers/session_provider.dart';
 import 'providers/document_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/offline_model_provider.dart';
+import 'providers/chat_provider.dart';
 import 'services/offline_ai_service.dart';
+import 'services/education_service.dart';
 
 late DocumentProvider _docProvider;
 late OfflineModelProvider _modelProvider;
@@ -19,28 +21,28 @@ void main() async {
   try {
     await Hive.initFlutter();
   } catch (e) {
-    print('Hive init failed: $e');
+    debugPrint('Hive init failed: $e');
   }
 
   try {
     _docProvider = DocumentProvider();
     await _docProvider.init();
   } catch (e) {
-    print('DocumentProvider failed: $e');
+    debugPrint('DocumentProvider failed: $e');
     _docProvider = DocumentProvider();
   }
 
   try {
     await OfflineAIService.instance.initialize();
   } catch (e) {
-    print('OfflineAIService failed (non-critical): $e');
+    debugPrint('OfflineAIService failed (non-critical): $e');
   }
 
   try {
     _modelProvider = OfflineModelProvider();
     await _modelProvider.initialize();
   } catch (e) {
-    print('OfflineModelProvider failed: $e');
+    debugPrint('OfflineModelProvider failed: $e');
     _modelProvider = OfflineModelProvider();
   }
 
@@ -48,15 +50,61 @@ void main() async {
     _sessionProvider = SessionProvider();
     await _sessionProvider.init();
   } catch (e) {
-    print('SessionProvider failed: $e');
+    debugPrint('SessionProvider failed: $e');
     _sessionProvider = SessionProvider();
   }
 
-  runApp(
-    UbuntuElimuApp(
-      docProvider: _docProvider,
-      modelProvider: _modelProvider,
-      sessionProvider: _sessionProvider,
-    ),
-  );
+  runApp(const UbuntuElimuApp());
+}
+
+class UbuntuElimuApp extends StatelessWidget {
+  const UbuntuElimuApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => NavigationProvider()),
+        ChangeNotifierProvider.value(value: _sessionProvider),
+        ChangeNotifierProvider.value(value: _docProvider),
+        ChangeNotifierProvider.value(value: _modelProvider),
+        // 1. SettingsProvider must come before consumers like ChatProvider and EducationService
+        ChangeNotifierProvider(
+          create: (context) {
+            final settings = SettingsProvider();
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              final models = context.read<OfflineModelProvider>();
+              settings.attachModelProvider(models);
+            });
+            return settings;
+          },
+        ),
+        // 2. ChatProvider depends on SettingsProvider for its AIProvider
+        ChangeNotifierProxyProvider<SettingsProvider, ChatProvider>(
+          create: (context) => ChatProvider(
+            Provider.of<SettingsProvider>(context, listen: false).getAIProvider(),
+          ),
+          update: (context, settings, chatProvider) {
+            chatProvider?.updateAIProvider(settings.getAIProvider());
+            return chatProvider ?? ChatProvider(settings.getAIProvider());
+          },
+        ),
+        // 3. EducationService depends on SettingsProvider
+        ProxyProvider<SettingsProvider, EducationService>(
+          update: (context, settings, previous) =>
+              EducationService(settings.getAIProvider()),
+        ),
+      ],
+      child: MaterialApp(
+        title: 'Ubuntu Elimu',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          fontFamily: 'Inter',
+          scaffoldBackgroundColor: const Color(0xFF0D0F14),
+          brightness: Brightness.dark,
+        ),
+        home: const MainShell(),
+      ),
+    );
+  }
 }
