@@ -267,16 +267,24 @@ class OfflineAIService {
       try {
         final clean =
             raw.replaceAll('```json', '').replaceAll('```', '').trim();
-
         final decoded = jsonDecode(clean);
-
         if (decoded is Map<String, dynamic>) {
           return decoded;
-        } else {
-          return {'data': decoded};
+        }
+      } catch (_) {}
+
+      try {
+        final start = raw.indexOf('{');
+        final end = raw.lastIndexOf('}');
+        if (start != -1 && end != -1 && end > start) {
+          final jsonSub = raw.substring(start, end + 1);
+          final decoded = jsonDecode(jsonSub);
+          if (decoded is Map<String, dynamic>) {
+            return decoded;
+          }
         }
       } catch (e) {
-        debugPrint('⚠️ JSON parse failed (attempt $attempt): $raw');
+        debugPrint('⚠️ JSON parse failed (attempt $attempt): $raw. Error: $e');
       }
     }
     return null;

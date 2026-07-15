@@ -203,7 +203,26 @@ class DocumentProvider with ChangeNotifier {
 
     if (doc.chunks.isEmpty) return [];
 
-    final queryWords = query.toLowerCase().split(RegExp(r'\s+'));
+    final stopWords = {
+      'what', 'whats', 'is', 'an', 'a', 'the', 'of', 'to', 'in', 'it', 
+      'that', 'this', 'you', 'i', 'and', 'for', 'on', 'with', 'as', 
+      'at', 'by', 'from', 'about', 'how', 'why', 'where', 'who', 'were', 
+      'was', 'are', 'be', 'been', 'or', 'but', 'not', 'they', 'them', 
+      'their', 'his', 'her', 'she', 'he', 'we', 'our', 'us', 'can', 'will', 
+      'would', 'should', 'could', 'me', 'my', 'your'
+    };
+
+    final cleanQuery = query.toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
+    final filteredWords = cleanQuery
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty && !stopWords.contains(w))
+        .toList();
+
+    final queryWords = filteredWords.isEmpty 
+        ? cleanQuery.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList() 
+        : filteredWords;
+
+    if (queryWords.isEmpty) return doc.chunks.take(topK).toList();
 
     final scored = doc.chunks.map((chunk) {
       final lower = chunk.toLowerCase();
@@ -224,11 +243,25 @@ class DocumentProvider with ChangeNotifier {
     int topKPerDoc = 2,
     int maxDocs = 3,
   }) {
-    final queryWords = query
-        .toLowerCase()
+    final stopWords = {
+      'what', 'whats', 'is', 'an', 'a', 'the', 'of', 'to', 'in', 'it', 
+      'that', 'this', 'you', 'i', 'and', 'for', 'on', 'with', 'as', 
+      'at', 'by', 'from', 'about', 'how', 'why', 'where', 'who', 'were', 
+      'was', 'are', 'be', 'been', 'or', 'but', 'not', 'they', 'them', 
+      'their', 'his', 'her', 'she', 'he', 'we', 'our', 'us', 'can', 'will', 
+      'would', 'should', 'could', 'me', 'my', 'your'
+    };
+
+    final cleanQuery = query.toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
+    final filteredWords = cleanQuery
         .split(RegExp(r'\s+'))
-        .where((w) => w.length > 2)
+        .where((w) => w.isNotEmpty && !stopWords.contains(w) && w.length > 2)
         .toList();
+
+    final queryWords = filteredWords.isEmpty 
+        ? cleanQuery.split(RegExp(r'\s+')).where((w) => w.length > 2).toList() 
+        : filteredWords;
+
     final results = <MapEntry<Document, List<String>>>[];
 
     for (final doc in _documents) {

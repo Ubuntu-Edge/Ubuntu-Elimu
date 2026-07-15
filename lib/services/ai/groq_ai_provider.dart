@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'base_ai_provider.dart';
 
@@ -87,9 +88,10 @@ class GroqAIProvider implements AIProvider {
           .cast<List<int>>()
           .transform(utf8.decoder)
           .transform(const LineSplitter())) {
-        if (chunk.isEmpty) continue;
-        if (chunk.startsWith('data: ')) {
-          final data = chunk.substring(6);
+        final trimmedChunk = chunk.trim();
+        if (trimmedChunk.isEmpty) continue;
+        if (trimmedChunk.startsWith('data: ')) {
+          final data = trimmedChunk.substring(6).trim();
           if (data == '[DONE]') break;
           try {
             final json = jsonDecode(data);
@@ -118,9 +120,25 @@ class GroqAIProvider implements AIProvider {
     );
     try {
       final clean = raw.replaceAll('```json', '').replaceAll('```', '').trim();
-      return jsonDecode(clean);
+      final decoded = jsonDecode(clean);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+    } catch (_) {}
+
+    try {
+      final start = raw.indexOf('{');
+      final end = raw.lastIndexOf('}');
+      if (start != -1 && end != -1 && end > start) {
+        final jsonSub = raw.substring(start, end + 1);
+        final decoded = jsonDecode(jsonSub);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+      }
     } catch (e) {
-      return null;
+      debugPrint('Robust JSON decoding failed: $e. Raw response was: $raw');
     }
+    return null;
   }
 }

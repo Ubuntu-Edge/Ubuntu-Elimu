@@ -2,11 +2,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
+import 'package:provider/provider.dart';
 
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
 import '../../../services/offline_ai_service.dart';
 import '../../../models/document.dart';
+import '../../../providers/settings_provider.dart';
 
 class DocumentWorkspaceScreen extends StatefulWidget {
   final dynamic document;
@@ -32,6 +34,9 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
   bool _isLoadingSummary = false;
   bool _isLoadingStudyPlan = false;
   bool _isLoadingFlashcards = false;
+  String? _summaryError;
+  String? _studyPlanError;
+  String? _flashcardsError;
 
   @override
   void initState() {
@@ -74,68 +79,144 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
 
   Future<void> _generateSummary() async {
     final doc = widget.document as Document;
-    if (!doc.isProcessed || doc.chunks.isEmpty) return;
+    if (!doc.isProcessed) {
+      setState(() => _summaryError = 'This document has not been processed yet.');
+      return;
+    }
+    if (doc.chunks.isEmpty) {
+      setState(() => _summaryError = 'No text content available to summarize.');
+      return;
+    }
 
-    setState(() => _isLoadingSummary = true);
+    setState(() {
+      _isLoadingSummary = true;
+      _summaryError = null;
+    });
     try {
-      final result = await OfflineAIService.instance.summarizeChunks(
-        doc.chunks.take(5).toList(),
+      final aiProvider = context.read<SettingsProvider>().getAIProvider();
+      final result = await aiProvider.generateJson(
+        'Summarize this content:\n\n${doc.chunks.take(5).join('\n\n')}',
+        systemPrompt: 'You are an expert summarizer for students. '
+            'You must return a valid JSON object with the following exact keys: '
+            '"title" (String), "summary" (String), "key_concepts" (List of Strings), '
+            '"exam_focus" (List of Strings), and "notes" (List of Strings). '
+            'Do not wrap in any other key.',
       );
       if (mounted) {
         setState(() {
-          _summary = result;
+          if (result == null) {
+            _summaryError = 'Failed to generate a valid summary format. Please try again.';
+          } else {
+            _summary = result;
+          }
           _isLoadingSummary = false;
         });
       }
     } catch (e) {
+      debugPrint('Error generating summary: $e');
       if (mounted) {
-        setState(() => _isLoadingSummary = false);
+        setState(() {
+          _summaryError = 'Error connecting to AI backend: $e';
+          _isLoadingSummary = false;
+        });
       }
     }
   }
 
   Future<void> _generateStudyPlan() async {
     final doc = widget.document as Document;
-    if (!doc.isProcessed || doc.chunks.isEmpty) return;
+    if (!doc.isProcessed) {
+      setState(() => _studyPlanError = 'This document has not been processed yet.');
+      return;
+    }
+    if (doc.chunks.isEmpty) {
+      setState(() => _studyPlanError = 'No text content available.');
+      return;
+    }
 
-    setState(() => _isLoadingStudyPlan = true);
+    setState(() {
+      _isLoadingStudyPlan = true;
+      _studyPlanError = null;
+    });
     try {
-      final result = await OfflineAIService.instance.generateStudyPlan(
-        doc.chunks.take(3).toList(),
-        days: 3,
+      final aiProvider = context.read<SettingsProvider>().getAIProvider();
+      final result = await aiProvider.generateJson(
+        'Create a 3-day study plan:\n\n${doc.chunks.take(3).join('\n\n')}',
+        systemPrompt: 'You create study plans for students. '
+            'You must return a valid JSON object with the following exact keys: '
+            '"plan" (List of objects, where each object has keys "day" (int), '
+            '"focus" (String), "duration_minutes" (int), and "tasks" (List of Strings)), '
+            'and "tips" (List of Strings).',
       );
       if (mounted) {
         setState(() {
-          _studyPlan = result;
+          if (result == null) {
+            _studyPlanError = 'Failed to generate a valid study plan format. Please try again.';
+          } else {
+            _studyPlan = result;
+          }
           _isLoadingStudyPlan = false;
         });
       }
     } catch (e) {
+      debugPrint('Error generating study plan: $e');
       if (mounted) {
-        setState(() => _isLoadingStudyPlan = false);
+        setState(() {
+          _studyPlanError = 'Error connecting to AI backend: $e';
+          _isLoadingStudyPlan = false;
+        });
       }
     }
   }
 
   Future<void> _generateFlashcards() async {
     final doc = widget.document as Document;
-    if (!doc.isProcessed || doc.chunks.isEmpty) return;
+    if (!doc.isProcessed) {
+      setState(() => _flashcardsError = 'This document has not been processed yet.');
+      return;
+    }
+    if (doc.chunks.isEmpty) {
+      setState(() => _flashcardsError = 'No text content available.');
+      return;
+    }
 
-    setState(() => _isLoadingFlashcards = true);
+    setState(() {
+      _isLoadingFlashcards = true;
+      _flashcardsError = null;
+    });
     try {
-      final result = await OfflineAIService.instance.generateFlashcards(
-        doc.chunks.take(5).toList(),
-        count: 8,
+      final aiProvider = context.read<SettingsProvider>().getAIProvider();
+      final result = await aiProvider.generateJson(
+        'Generate 8 flashcards:\n\n${doc.chunks.take(5).join('\n\n')}',
+        systemPrompt: 'You create study flashcards. '
+            'You must return a valid JSON object with the key "flashcards", which is '
+            'a List of objects, where each object has keys "q" (String for question) '
+            'and "a" (String for answer).',
       );
+      List<Map<String, dynamic>>? flashcardsList;
+      if (result != null) {
+        final list = result['flashcards'];
+        if (list is List) {
+          flashcardsList = list.map((e) => Map<String, dynamic>.from(e)).toList();
+        }
+      }
       if (mounted) {
         setState(() {
-          _flashcards = result;
+          if (flashcardsList == null || flashcardsList.isEmpty) {
+            _flashcardsError = 'Failed to generate a valid flashcard format. Please try again.';
+          } else {
+            _flashcards = flashcardsList;
+          }
           _isLoadingFlashcards = false;
         });
       }
     } catch (e) {
+      debugPrint('Error generating flashcards: $e');
       if (mounted) {
-        setState(() => _isLoadingFlashcards = false);
+        setState(() {
+          _flashcardsError = 'Error connecting to AI backend: $e';
+          _isLoadingFlashcards = false;
+        });
       }
     }
   }
@@ -274,23 +355,34 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
 
     if (_summary == null) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'No summary generated yet',
-              style: UETypography.inter(
-                fontSize: 13,
-                color: UEColors.textMuted,
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'No summary generated yet',
+                style: UETypography.inter(
+                  fontSize: 13,
+                  color: UEColors.textMuted,
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _generateSummary,
-              style: ElevatedButton.styleFrom(backgroundColor: UEColors.accent),
-              child: const Text('Generate Summary'),
-            ),
-          ],
+              if (_summaryError != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _summaryError!,
+                  style: UETypography.caption.copyWith(color: Colors.redAccent),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _generateSummary,
+                style: ElevatedButton.styleFrom(backgroundColor: UEColors.accent),
+                child: const Text('Generate Summary'),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -347,23 +439,34 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
 
     if (_studyPlan == null) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'No study plan generated yet',
-              style: UETypography.inter(
-                fontSize: 13,
-                color: UEColors.textMuted,
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'No study plan generated yet',
+                style: UETypography.inter(
+                  fontSize: 13,
+                  color: UEColors.textMuted,
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _generateStudyPlan,
-              style: ElevatedButton.styleFrom(backgroundColor: UEColors.accent),
-              child: const Text('Generate Study Plan'),
-            ),
-          ],
+              if (_studyPlanError != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _studyPlanError!,
+                  style: UETypography.caption.copyWith(color: Colors.redAccent),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _generateStudyPlan,
+                style: ElevatedButton.styleFrom(backgroundColor: UEColors.accent),
+                child: const Text('Generate Study Plan'),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -407,23 +510,34 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
 
     if (_flashcards == null || _flashcards!.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'No flashcards generated yet',
-              style: UETypography.inter(
-                fontSize: 13,
-                color: UEColors.textMuted,
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'No flashcards generated yet',
+                style: UETypography.inter(
+                  fontSize: 13,
+                  color: UEColors.textMuted,
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _generateFlashcards,
-              style: ElevatedButton.styleFrom(backgroundColor: UEColors.accent),
-              child: const Text('Generate Flashcards'),
-            ),
-          ],
+              if (_flashcardsError != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _flashcardsError!,
+                  style: UETypography.caption.copyWith(color: Colors.redAccent),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _generateFlashcards,
+                style: ElevatedButton.styleFrom(backgroundColor: UEColors.accent),
+                child: const Text('Generate Flashcards'),
+              ),
+            ],
+          ),
         ),
       );
     }
