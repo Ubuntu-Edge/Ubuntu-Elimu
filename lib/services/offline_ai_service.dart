@@ -5,6 +5,8 @@ import 'package:llama_flutter_android/llama_flutter_android.dart' as llama;
 
 import '../models/offline_model.dart';
 import '../models/offline_context_params.dart';
+import 'crash_logger_service.dart';
+import 'memory_monitor_service.dart';
 
 class OfflineAIService {
   static final OfflineAIService _instance = OfflineAIService._internal();
@@ -46,14 +48,68 @@ class OfflineAIService {
     }
 
     try {
+      // Check memory before loading
+      final memoryInfo = await MemoryMonitorService.instance.getMemoryInfo();
+      debugPrint('💾 Memory status: $memoryInfo');
+
+      // Check if we have sufficient memory (need at least 800MB free)
+      final hasSufficientMemory =
+          await MemoryMonitorService.instance.hasSufficientMemory(
+        minRequiredMB: 800,
+      );
+
+      if (!hasSufficientMemory) {
+        final availMB =
+            await MemoryMonitorService.instance.getAvailableMemoryMB();
+        throw Exception(
+          'Insufficient memory to load model. Available: ${availMB}MB, Required: 800MB. '
+          'Please close other apps and try again.',
+        );
+      }
+
+      // Get device-optimized settings
+      final recommendedContext =
+          await MemoryMonitorService.instance.getRecommendedContextSize();
+      final recommendedThreads =
+          await MemoryMonitorService.instance.getRecommendedThreadCount();
+
+      // Use recommended settings or user-provided (whichever is safer)
+      final finalContext = contextParams?.nCtx != null
+          ? (contextParams!.nCtx! < recommendedContext
+              ? contextParams.nCtx!
+              : recommendedContext)
+          : recommendedContext;
+
+      final finalThreads = contextParams?.nThreads != null
+          ? (contextParams!.nThreads! < recommendedThreads
+              ? contextParams.nThreads!
+              : recommendedThreads)
+          : recommendedThreads;
+
       debugPrint('🔄 Loading model: $modelPath');
+      debugPrint(
+          '   Threads: $finalThreads (recommended: $recommendedThreads)');
+      debugPrint(
+          '   Context size: $finalContext (recommended: $recommendedContext)');
+      debugPrint('   GPU layers: ${contextParams?.nGpuLayers ?? 0}');
+
+      // Unload any existing model first to free memory
+      if (_isModelLoaded && _controller != null) {
+        debugPrint('🔄 Unloading previous model...');
+        await unloadModel();
+
+        // Force garbage collection and wait
+        MemoryMonitorService.instance.forceGarbageCollection();
+        await Future.delayed(const Duration(seconds: 1));
+      }
 
       _controller ??= llama.LlamaController();
 
+      // Load model with device-optimized settings
       await _controller!.loadModel(
         modelPath: modelPath,
-        threads: contextParams?.nThreads ?? 4,
-        contextSize: contextParams?.nCtx ?? 2048,
+        threads: finalThreads,
+        contextSize: finalContext,
         gpuLayers: contextParams?.nGpuLayers ?? 0,
       );
 
@@ -61,12 +117,35 @@ class OfflineAIService {
       _loadedModelPath = modelPath;
       _loadedModel = model;
 
-      debugPrint('✅ Model loaded: ${model.name}');
+      debugPrint('✅ Model loaded successfully: ${model.name}');
+
+      // Log final memory after loading
+      final memoryAfter = await MemoryMonitorService.instance.getMemoryInfo();
+      debugPrint('💾 Memory after loading: $memoryAfter');
+
       return true;
-    } catch (e) {
-      debugPrint('❌ Failed to load model: $e');
+    } catch (e, stackTrace) {
+      debugPrint('❌ Failed to load model: $e\nStackTrace: $stackTrace');
+
+      // Get memory info for crash context
+      final memoryInfo = await MemoryMonitorService.instance.getMemoryInfo();
+
+      // Report to crash monitoring
+      CrashLoggerService.instance.logCrash(
+        message: 'Model loading failed',
+        error: e,
+        stackTrace: stackTrace,
+        context: {
+          'modelName': model.name,
+          'modelPath': modelPath,
+          'contextSize': contextParams?.nCtx ?? 'auto',
+          'memoryInfo': memoryInfo,
+        },
+      );
+
       _isModelLoaded = false;
-      return false;
+      _controller = null;
+      rethrow;
     }
   }
 
@@ -98,6 +177,7 @@ class OfflineAIService {
     }
 
     try {
+      debugPrint('🔄 Starting inference...');
       final stream = _controller!.generateChat(
         messages: [
           llama.ChatMessage(role: 'system', content: systemPrompt),
@@ -110,14 +190,34 @@ class OfflineAIService {
         repeatPenalty: repeatPenalty,
       );
 
+      int tokenCount = 0;
       await for (final token in stream) {
         if (_stopRequested) {
           await _controller?.stop();
+          debugPrint('🛑 Inference stopped by user');
           break;
         }
         yield token;
+        tokenCount++;
       }
-    } catch (e) {
+
+      debugPrint('✅ Inference complete ($tokenCount tokens)');
+    } catch (e, stackTrace) {
+      debugPrint('❌ Inference error: $e\nStackTrace: $stackTrace');
+
+      // Report to crash monitoring
+      CrashLoggerService.instance.logCrash(
+        message: 'Model inference failed',
+        error: e,
+        stackTrace: stackTrace,
+        context: {
+          'model': _loadedModel?.name ?? 'unknown',
+          'promptLength': prompt.length,
+          'maxTokens': maxTokens,
+        },
+      );
+
+      // Yield error message
       yield '❌ Generation error: $e';
     }
   }
@@ -160,15 +260,13 @@ class OfflineAIService {
       final raw = await generateResponse(
         prompt: prompt,
         systemPrompt:
-        '$systemPrompt\nReturn ONLY valid JSON. No markdown, no text.',
+            '$systemPrompt\nReturn ONLY valid JSON. No markdown, no text.',
         maxTokens: maxTokens,
       );
 
       try {
-        final clean = raw
-            .replaceAll('```json', '')
-            .replaceAll('```', '')
-            .trim();
+        final clean =
+            raw.replaceAll('```json', '').replaceAll('```', '').trim();
 
         final decoded = jsonDecode(clean);
 
@@ -194,9 +292,9 @@ class OfflineAIService {
   }
 
   Future<List<Map<String, dynamic>>?> generateFlashcards(
-      List<String> chunks, {
-        int count = 8,
-      }) async {
+    List<String> chunks, {
+    int count = 8,
+  }) async {
     final result = await generateJson(
       systemPrompt: 'You create flashcards.',
       prompt: 'Generate $count flashcards:\n\n${chunks.join('\n\n')}',
@@ -207,15 +305,13 @@ class OfflineAIService {
     final list = result['flashcards'];
     if (list is! List) return null;
 
-    return list
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList();
+    return list.map((e) => Map<String, dynamic>.from(e)).toList();
   }
 
   Future<Map<String, dynamic>?> generateStudyPlan(
-      List<String> chunks, {
-        int days = 3,
-      }) {
+    List<String> chunks, {
+    int days = 3,
+  }) {
     return generateJson(
       systemPrompt: 'You create study plans.',
       prompt: 'Create a $days-day plan:\n\n${chunks.join('\n\n')}',
@@ -229,7 +325,7 @@ class OfflineAIService {
   }) {
     return generateResponseStream(
       systemPrompt:
-      'You are a helpful tutor.\nContext:\n${contextChunks.join('\n')}',
+          'You are a helpful tutor.\nContext:\n${contextChunks.join('\n')}',
       prompt: userMessage,
     );
   }
@@ -244,10 +340,10 @@ class OfflineAIService {
   }
 
   Map<String, dynamic>? getModelInfo() => {
-    'name': _loadedModel?.name ?? 'None',
-    'path': _loadedModelPath,
-    'loaded': _isModelLoaded,
-  };
+        'name': _loadedModel?.name ?? 'None',
+        'path': _loadedModelPath,
+        'loaded': _isModelLoaded,
+      };
 
   OfflineModel? get loadedModel => _loadedModel;
   String? get loadedModelPath => _loadedModelPath;

@@ -12,7 +12,8 @@ class ModelDownloadService {
   ModelDownloadService._init();
 
   // Active downloads tracking
-  final Map<String, StreamController<ModelDownloadProgress>> _activeDownloads = {};
+  final Map<String, StreamController<ModelDownloadProgress>> _activeDownloads =
+      {};
   final Map<String, http.Client> _downloadClients = {};
   static const String _activeDownloadsKey = 'active_downloads';
 
@@ -84,7 +85,8 @@ class ModelDownloadService {
   }) async* {
     // Create progress stream
     final progressController = StreamController<ModelDownloadProgress>();
-    _activeDownloads[modelId] = progressController;    await _saveActiveDownloads(); // Persist download state
+    _activeDownloads[modelId] = progressController;
+    await _saveActiveDownloads(); // Persist download state
     try {
       // Get storage directory (external on Android for persistence across updates)
       final storageDir = await _getModelStorageDirectory();
@@ -135,7 +137,9 @@ class ModelDownloadService {
       if (await finalFile.exists()) {
         final fileSize = await finalFile.length();
         debugPrint('🔍 Found existing file: ${finalFile.path}');
-        debugPrint('   Size: ${(fileSize / (1024 * 1024)).toStringAsFixed(1)} MB');
+        debugPrint(
+          '   Size: ${(fileSize / (1024 * 1024)).toStringAsFixed(1)} MB',
+        );
 
         if (fileSize > 1024 * 1024) {
           // File exists and is valid
@@ -168,7 +172,9 @@ class ModelDownloadService {
 
       if (response.statusCode != 200 && response.statusCode != 206) {
         debugPrint('❌ HTTP Error: ${response.statusCode}');
-        throw Exception('Download failed with status ${response.statusCode}. Please check your internet connection and try again.');
+        throw Exception(
+          'Download failed with status ${response.statusCode}. Please check your internet connection and try again.',
+        );
       }
 
       final totalBytes = (response.contentLength ?? 0) + startByte;
@@ -190,7 +196,9 @@ class ModelDownloadService {
         sink.add(chunk);
         receivedBytes += chunk.length;
 
-        final progress = totalBytes > 0 ? (receivedBytes / totalBytes) * 100 : 0;
+        final progress = totalBytes > 0
+            ? (receivedBytes / totalBytes) * 100
+            : 0;
         final progressData = ModelDownloadProgress(
           modelId: modelId,
           stage: ModelDownloadStage.downloading,
@@ -263,21 +271,61 @@ class ModelDownloadService {
       // Clear from active downloads
       await _clearActiveDownload(modelId);
 
-      debugPrint('✅ Model downloaded: ${finalFile.path} (${(fileSize / (1024 * 1024)).toStringAsFixed(1)} MB)');
+      debugPrint(
+        '✅ Model downloaded: ${finalFile.path} (${(fileSize / (1024 * 1024)).toStringAsFixed(1)} MB)',
+      );
     } catch (e, stackTrace) {
       debugPrint('❌ Download failed: $e');
       debugPrint('Stack trace: $stackTrace');
 
       // Provide user-friendly error message
       String userMessage = 'Download failed';
-      if (e.toString().contains('SocketException') || e.toString().contains('Connection')) {
-        userMessage = 'Network error: Please check your internet connection';
-      } else if (e.toString().contains('TimeoutException')) {
-        userMessage = 'Download timeout: Please try again';
-      } else if (e.toString().contains('Space') || e.toString().contains('storage')) {
-        userMessage = 'Insufficient storage space';
+
+      if (e.toString().contains('Failed host lookup') ||
+          e.toString().contains('SocketException')) {
+        userMessage =
+            'No Internet Connection\n\n'
+            'Unable to reach download servers. Please:\n'
+            '• Turn on Wi-Fi or mobile data\n'
+            '• Check airplane mode is off\n'
+            '• Disable VPN if active\n\n'
+            'Models must be downloaded once while online, '
+            'then they work completely offline.';
+      } else if (e.toString().contains('Connection refused') ||
+          e.toString().contains('Connection reset')) {
+        userMessage =
+            'Connection Failed\n\n'
+            'Unable to establish connection to download servers. '
+            'Please check your internet connection and try again.';
+      } else if (e.toString().contains('TimeoutException') ||
+          e.toString().contains('timed out')) {
+        userMessage =
+            'Download Timeout\n\n'
+            'The download took too long. This may be due to:\n'
+            '• Slow internet connection\n'
+            '• Server issues\n\n'
+            'Please try again with a stable connection.';
+      } else if (e.toString().contains('Space') ||
+          e.toString().contains('storage') ||
+          e.toString().contains('No space')) {
+        userMessage =
+            'Insufficient Storage\n\n'
+            'Not enough space on your device. '
+            'Please free up storage space and try again.';
+      } else if (e.toString().contains('404') ||
+          e.toString().contains('Not Found')) {
+        userMessage =
+            'Model Not Found\n\n'
+            'The model file could not be found on the server. '
+            'It may have been moved or removed.';
+      } else if (e.toString().contains('403') ||
+          e.toString().contains('Forbidden')) {
+        userMessage =
+            'Access Denied\n\n'
+            'Unable to access the model file. '
+            'Please check your internet connection and try again.';
       } else {
-        userMessage = 'Download failed: ${e.toString()}';
+        userMessage = 'Download Failed\n\n${e.toString()}';
       }
 
       final failedProgress = ModelDownloadProgress(
@@ -297,10 +345,10 @@ class ModelDownloadService {
 
   /// Extract gzip compressed file with progress tracking
   Future<void> _extractGzip(
-      File compressedFile,
-      File outputFile,
-      Function(double) onProgress,
-      ) async {
+    File compressedFile,
+    File outputFile,
+    Function(double) onProgress,
+  ) async {
     final inputStream = compressedFile.openRead();
     final decompressedStream = inputStream.transform(gzip.decoder);
     final outputSink = outputFile.openWrite();
@@ -377,7 +425,9 @@ class ModelDownloadService {
       if (await file.exists()) {
         final sizeMB = (await file.length()) / (1024 * 1024);
         await file.delete();
-        debugPrint('✅ Deleted model: $localPath (${sizeMB.toStringAsFixed(1)} MB freed)');
+        debugPrint(
+          '✅ Deleted model: $localPath (${sizeMB.toStringAsFixed(1)} MB freed)',
+        );
         return true;
       }
       return false;

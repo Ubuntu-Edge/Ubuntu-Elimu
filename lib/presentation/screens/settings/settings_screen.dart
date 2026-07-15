@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
 import '../../../providers/offline_model_provider.dart';
@@ -89,8 +91,9 @@ class SettingsScreen extends StatelessWidget {
                   Consumer<OfflineModelProvider>(
                     builder: (_, provider, __) {
                       final active = provider.activeModel;
-                      final downloaded =
-                          provider.models.where((m) => m.isDownloaded).length;
+                      final downloaded = provider.models
+                          .where((m) => m.isDownloaded)
+                          .length;
                       return Text(
                         active != null
                             ? '${active.name} · Active'
@@ -109,15 +112,21 @@ class SettingsScreen extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded,
-                color: UEColors.textMuted, size: 18),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: UEColors.textMuted,
+              size: 18,
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildPreferenceSwitches(BuildContext context, SettingsProvider settings) {
+  Widget _buildPreferenceSwitches(
+    BuildContext context,
+    SettingsProvider settings,
+  ) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
@@ -130,11 +139,18 @@ class SettingsScreen extends StatelessWidget {
           SwitchListTile(
             title: Text(
               'Socratic Coaching Mode',
-              style: UETypography.spaceGrotesk(fontSize: 13, fontWeight: FontWeight.w500, color: UEColors.textPrimary),
+              style: UETypography.spaceGrotesk(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: UEColors.textPrimary,
+              ),
             ),
             subtitle: Text(
               'Guides learning by asking step-by-step questions instead of solving directly.',
-              style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
+              style: UETypography.inter(
+                fontSize: 11,
+                color: UEColors.textMuted,
+              ),
             ),
             value: settings.socraticMode,
             activeThumbColor: UEColors.accent,
@@ -148,11 +164,18 @@ class SettingsScreen extends StatelessWidget {
           SwitchListTile(
             title: Text(
               'System Power Mode',
-              style: UETypography.spaceGrotesk(fontSize: 13, fontWeight: FontWeight.w500, color: UEColors.textPrimary),
+              style: UETypography.spaceGrotesk(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: UEColors.textPrimary,
+              ),
             ),
             subtitle: Text(
               'Optimizes CPU cores for local model inference speeds.',
-              style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
+              style: UETypography.inter(
+                fontSize: 11,
+                color: UEColors.textMuted,
+              ),
             ),
             value: settings.powerMode,
             activeThumbColor: UEColors.accent,
@@ -166,11 +189,18 @@ class SettingsScreen extends StatelessWidget {
           ListTile(
             title: Text(
               'AI Backend Model',
-              style: UETypography.spaceGrotesk(fontSize: 13, fontWeight: FontWeight.w500, color: UEColors.textPrimary),
+              style: UETypography.spaceGrotesk(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: UEColors.textPrimary,
+              ),
             ),
             subtitle: Text(
               'Switch between offline local model and Groq cloud model.',
-              style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
+              style: UETypography.inter(
+                fontSize: 11,
+                color: UEColors.textMuted,
+              ),
             ),
             trailing: DropdownButton<AIBackend>(
               value: settings.activeBackend,
@@ -185,11 +215,17 @@ class SettingsScreen extends StatelessWidget {
               items: const [
                 DropdownMenuItem(
                   value: AIBackend.local,
-                  child: Text('Local Offline', style: TextStyle(color: Colors.white, fontSize: 13)),
+                  child: Text(
+                    'Local Offline',
+                    style: TextStyle(color: Colors.white, fontSize: 13),
+                  ),
                 ),
                 DropdownMenuItem(
                   value: AIBackend.groq,
-                  child: Text('Groq Cloud', style: TextStyle(color: Colors.white, fontSize: 13)),
+                  child: Text(
+                    'Groq Cloud',
+                    style: TextStyle(color: Colors.white, fontSize: 13),
+                  ),
                 ),
               ],
             ),
@@ -222,14 +258,20 @@ class SettingsScreen extends StatelessWidget {
           TextField(
             obscureText: true,
             onChanged: (val) => settings.setGroqApiKey(val),
-            controller: TextEditingController(text: settings.groqApiKey)..selection = TextSelection.fromPosition(TextPosition(offset: settings.groqApiKey.length)),
+            controller: TextEditingController(text: settings.groqApiKey)
+              ..selection = TextSelection.fromPosition(
+                TextPosition(offset: settings.groqApiKey.length),
+              ),
             style: const TextStyle(color: Colors.white, fontSize: 13),
             decoration: InputDecoration(
               hintText: 'gsk_...',
               hintStyle: TextStyle(color: UEColors.textMuted.withOpacity(0.5)),
               filled: true,
               fillColor: UEColors.bgPrimary,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: const BorderSide(color: UEColors.border),
@@ -255,23 +297,91 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Widget _buildSystemInfoCard(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: UEColors.surface,
-        border: Border.all(color: UEColors.border, width: 0.5),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          _buildInfoRow('Local Storage Used', '11.6 MB / 64 GB'),
-          const SizedBox(height: 10),
-          _buildInfoRow('Server Sync Status', 'Ready (Kiswahili & English packs)'),
-          const SizedBox(height: 10),
-          _buildInfoRow('App Version', '1.0.0 (Ubuntu-Edge Custom)'),
-        ],
-      ),
+    return FutureBuilder<Map<String, String>>(
+      future: _getSystemInfo(context),
+      builder: (context, snapshot) {
+        final info =
+            snapshot.data ??
+            {
+              'storage': 'Calculating...',
+              'models': 'Calculating...',
+              'version': '1.0.0+1',
+            };
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: UEColors.surface,
+            border: Border.all(color: UEColors.border, width: 0.5),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            children: [
+              _buildInfoRow('Local Storage Used', info['storage']!),
+              const SizedBox(height: 10),
+              _buildInfoRow('Downloaded Models', info['models']!),
+              const SizedBox(height: 10),
+              _buildInfoRow('App Version', info['version']!),
+            ],
+          ),
+        );
+      },
     );
+  }
+
+  Future<Map<String, String>> _getSystemInfo(BuildContext context) async {
+    try {
+      // Calculate actual storage used
+      final appDir = await getApplicationDocumentsDirectory();
+      int totalSize = 0;
+
+      if (await appDir.exists()) {
+        await for (var entity in appDir.list(
+          recursive: true,
+          followLinks: false,
+        )) {
+          if (entity is File) {
+            try {
+              totalSize += await entity.length();
+            } catch (_) {}
+          }
+        }
+      }
+
+      // Format size
+      String storageText;
+      if (totalSize < 1024 * 1024) {
+        storageText = '${(totalSize / 1024).toStringAsFixed(1)} KB';
+      } else if (totalSize < 1024 * 1024 * 1024) {
+        storageText = '${(totalSize / (1024 * 1024)).toStringAsFixed(1)} MB';
+      } else {
+        storageText =
+            '${(totalSize / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+      }
+
+      // Get model info
+      final modelProvider = Provider.of<OfflineModelProvider>(
+        context,
+        listen: false,
+      );
+      final downloadedCount = modelProvider.models
+          .where((m) => m.isDownloaded)
+          .length;
+      final totalCount = modelProvider.models.length;
+      final modelsText = '$downloadedCount of $totalCount downloaded';
+
+      return {
+        'storage': storageText,
+        'models': modelsText,
+        'version': '1.0.0+1',
+      };
+    } catch (e) {
+      return {
+        'storage': 'Unable to calculate',
+        'models': 'See above',
+        'version': '1.0.0+1',
+      };
+    }
   }
 
   Widget _buildInfoRow(String label, String value) {
@@ -284,7 +394,11 @@ class SettingsScreen extends StatelessWidget {
         ),
         Text(
           value,
-          style: UETypography.inter(fontSize: 12, color: UEColors.textPrimary, fontWeight: FontWeight.w500),
+          style: UETypography.inter(
+            fontSize: 12,
+            color: UEColors.textPrimary,
+            fontWeight: FontWeight.w500,
+          ),
         ),
       ],
     );

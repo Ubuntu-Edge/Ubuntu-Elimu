@@ -57,6 +57,10 @@ dependencies:
   # Local Database (future vector/document indexing)
   sqflite: ^2.4.0
 
+
+  # Device Info for diagnostic data
+  device_info_plus: ^10.1.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

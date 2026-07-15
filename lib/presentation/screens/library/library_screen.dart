@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
@@ -31,9 +30,7 @@ class LibraryScreen extends StatelessWidget {
             const SizedBox(height: 14),
             _buildCategoryChips(context, docProvider),
             const SizedBox(height: 16),
-            Expanded(
-              child: _buildDocumentList(context, docProvider),
-            ),
+            Expanded(child: _buildDocumentList(context, docProvider)),
           ],
         ),
       ),
@@ -66,13 +63,18 @@ class LibraryScreen extends StatelessWidget {
         children: [
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 12),
-            child: Icon(TablerIcons.search,
-                color: UEColors.textMuted, size: 18),
+            child: Icon(
+              TablerIcons.search,
+              color: UEColors.textMuted,
+              size: 18,
+            ),
           ),
           Expanded(
             child: TextField(
               style: UETypography.inter(
-                  fontSize: 13, color: UEColors.textPrimary),
+                fontSize: 13,
+                color: UEColors.textPrimary,
+              ),
               decoration: const InputDecoration(
                 hintText: 'Search offline files...',
                 border: InputBorder.none,
@@ -87,8 +89,7 @@ class LibraryScreen extends StatelessWidget {
   }
 
   // ================= FILTERS =================
-  Widget _buildCategoryChips(
-      BuildContext context, DocumentProvider provider) {
+  Widget _buildCategoryChips(BuildContext context, DocumentProvider provider) {
     final categories = ['all', 'pdf', 'pptx', 'docx'];
 
     return SingleChildScrollView(
@@ -103,16 +104,14 @@ class LibraryScreen extends StatelessWidget {
               onTap: () => provider.setSelectedCategory(cat),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
-                padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
-                  color: isSelected
-                      ? UEColors.iconBg
-                      : UEColors.surface,
+                  color: isSelected ? UEColors.iconBg : UEColors.surface,
                   border: Border.all(
-                    color: isSelected
-                        ? UEColors.accent
-                        : UEColors.border,
+                    color: isSelected ? UEColors.accent : UEColors.border,
                     width: 0.5,
                   ),
                   borderRadius: BorderRadius.circular(20),
@@ -122,9 +121,7 @@ class LibraryScreen extends StatelessWidget {
                   style: UETypography.inter(
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
-                    color: isSelected
-                        ? UEColors.accent
-                        : UEColors.textMuted,
+                    color: isSelected ? UEColors.accent : UEColors.textMuted,
                   ),
                 ),
               ),
@@ -136,8 +133,7 @@ class LibraryScreen extends StatelessWidget {
   }
 
   // ================= DOCUMENT LIST =================
-  Widget _buildDocumentList(
-      BuildContext context, DocumentProvider provider) {
+  Widget _buildDocumentList(BuildContext context, DocumentProvider provider) {
     final docs = provider.documents;
 
     if (docs.isEmpty) {
@@ -145,15 +141,11 @@ class LibraryScreen extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(TablerIcons.file_off,
-                size: 36, color: UEColors.border),
+            Icon(TablerIcons.file_off, size: 36, color: UEColors.border),
             SizedBox(height: 12),
             Text(
               'No matching offline files found',
-              style: TextStyle(
-                color: UEColors.textMuted,
-                fontSize: 13,
-              ),
+              style: TextStyle(color: UEColors.textMuted, fontSize: 13),
             ),
           ],
         ),
@@ -251,10 +243,7 @@ class LibraryScreen extends StatelessWidget {
       leading: Icon(icon, color: UEColors.accent, size: 18),
       title: Text(
         label,
-        style: UETypography.inter(
-          fontSize: 12,
-          color: UEColors.textPrimary,
-        ),
+        style: UETypography.inter(fontSize: 12, color: UEColors.textPrimary),
       ),
       onTap: onTap,
     );
@@ -273,10 +262,7 @@ class LibraryScreen extends StatelessWidget {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => DocumentWorkspaceScreen(
-            document: doc,
-            mode: mode,
-          ),
+          builder: (_) => DocumentWorkspaceScreen(document: doc, mode: mode),
         ),
       );
     });
@@ -287,43 +273,36 @@ class LibraryScreen extends StatelessWidget {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => DocumentWorkspaceScreen(
-          document: doc,
-          mode: "reader",
-        ),
+        builder: (_) => DocumentWorkspaceScreen(document: doc, mode: "reader"),
       ),
     );
   }
 
-  // ================= UPLOAD SIMULATION =================
-  void _simulateUpload(BuildContext context, DocumentProvider provider) {
-    final random = Random();
+  // ================= UPLOAD REAL DOCUMENT =================
+  Future<void> _simulateUpload(
+    BuildContext context,
+    DocumentProvider provider,
+  ) async {
+    final initialCount = provider.documents.length;
 
-    final names = [
-      'Anatomy Exam Prep — Q2.pdf',
-      'Calculus Formulas Guide.docx',
-      'Advanced Astrophysics presentation.pptx',
-      'Kiswahili Grammar guide.pdf',
-      'Microeconomics lecture slides.pptx'
-    ];
+    await provider.pickAndUploadDocument();
 
-    final docTypes = [
-      DocType.pdf,
-      DocType.docx,
-      DocType.pptx,
-      DocType.pdf,
-      DocType.pptx
-    ];
-
-    final idx = random.nextInt(names.length);
-
-    provider.pickAndUploadDocument();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Uploaded ${names[idx]} successfully'),
-        backgroundColor: UEColors.surface,
-      ),
-    );
+    // Check if a new document was added
+    if (provider.documents.length > initialCount) {
+      final uploadedDoc = provider.documents.last;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Uploaded ${uploadedDoc.name} successfully'),
+          backgroundColor: UEColors.surface,
+        ),
+      );
+    } else if (provider.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(provider.error!),
+          backgroundColor: Colors.red.shade900,
+        ),
+      );
+    }
   }
 }

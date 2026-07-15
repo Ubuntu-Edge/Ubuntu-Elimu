@@ -25,7 +25,8 @@ class _OfflineModelScreenState extends State<OfflineModelScreen> {
 
   Future<void> _loadStorageInfo() async {
     final used = await ModelDownloadService.instance.getModelsDirectorySize();
-    if (mounted) setState(() => _usedStorageMB = (used / (1024 * 1024)).round());
+    if (mounted)
+      setState(() => _usedStorageMB = (used / (1024 * 1024)).round());
   }
 
   @override
@@ -36,7 +37,11 @@ class _OfflineModelScreenState extends State<OfflineModelScreen> {
         backgroundColor: UEColors.bgPrimary,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(TablerIcons.arrow_left, color: UEColors.textMuted, size: 20),
+          icon: const Icon(
+            TablerIcons.arrow_left,
+            color: UEColors.textMuted,
+            size: 20,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text('Offline Models', style: UETypography.h3),
@@ -45,6 +50,53 @@ class _OfflineModelScreenState extends State<OfflineModelScreen> {
       body: Consumer<OfflineModelProvider>(
         builder: (context, provider, _) {
           final models = provider.models;
+
+          // Show error dialog if there's an error
+          if (provider.error != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (_) => AlertDialog(
+                  backgroundColor: UEColors.surface,
+                  title: Row(
+                    children: [
+                      Icon(
+                        TablerIcons.alert_circle,
+                        color: UEColors.pdfFg,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Text('Model Error', style: UETypography.h3),
+                    ],
+                  ),
+                  content: SingleChildScrollView(
+                    child: Text(
+                      provider.error!,
+                      style: UETypography.inter(
+                        fontSize: 13,
+                        color: UEColors.textSecondary,
+                        height: 1.5,
+                      ),
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        provider.clearError();
+                      },
+                      child: Text(
+                        'OK',
+                        style: UETypography.inter(color: UEColors.accent),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            });
+          }
+
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
@@ -60,15 +112,18 @@ class _OfflineModelScreenState extends State<OfflineModelScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              ...models.map((m) => _ModelCard(
-                model: m,
-                isActive: provider.activeModel?.id == m.id,
-                isLoading: provider.isContextLoading &&
-                    provider.activeModel?.id == m.id,
-                onDownload: () => provider.startDownload(m),
-                onActivate: () => provider.setActiveModel(m),
-                onDelete: () => _confirmDelete(context, provider, m),
-              )),
+              ...models.map(
+                (m) => _ModelCard(
+                  model: m,
+                  isActive: provider.activeModel?.id == m.id,
+                  isLoading:
+                      provider.isContextLoading &&
+                      provider.activeModel?.id == m.id,
+                  onDownload: () => provider.startDownload(m),
+                  onActivate: () => provider.setActiveModel(m),
+                  onDelete: () => _confirmDelete(context, provider, m),
+                ),
+              ),
             ],
           );
         },
@@ -91,15 +146,22 @@ class _OfflineModelScreenState extends State<OfflineModelScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Models Storage',
-                  style: UETypography.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: UEColors.textPrimary)),
+              Text(
+                'Models Storage',
+                style: UETypography.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: UEColors.textPrimary,
+                ),
+              ),
               const SizedBox(height: 2),
-              Text('$_usedStorageMB MB used',
-                  style: UETypography.inter(
-                      fontSize: 11, color: UEColors.textMuted)),
+              Text(
+                '$_usedStorageMB MB used',
+                style: UETypography.inter(
+                  fontSize: 11,
+                  color: UEColors.textMuted,
+                ),
+              ),
             ],
           ),
         ],
@@ -108,27 +170,36 @@ class _OfflineModelScreenState extends State<OfflineModelScreen> {
   }
 
   Future<void> _confirmDelete(
-      BuildContext context, OfflineModelProvider provider, OfflineModel model) async {
+    BuildContext context,
+    OfflineModelProvider provider,
+    OfflineModel model,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: UEColors.surface,
-        title: Text('Delete ${model.name}?',
-            style: UETypography.h3),
+        title: Text('Delete ${model.name}?', style: UETypography.h3),
         content: Text(
           'The model file will be removed from your device. You can re-download it anytime.',
-          style: UETypography.inter(fontSize: 13, color: UEColors.textSecondary),
+          style: UETypography.inter(
+            fontSize: 13,
+            color: UEColors.textSecondary,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text('Cancel',
-                style: UETypography.inter(color: UEColors.textMuted)),
+            child: Text(
+              'Cancel',
+              style: UETypography.inter(color: UEColors.textMuted),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('Delete',
-                style: UETypography.inter(color: UEColors.pdfFg)),
+            child: Text(
+              'Delete',
+              style: UETypography.inter(color: UEColors.pdfFg),
+            ),
           ),
         ],
       ),
@@ -178,56 +249,75 @@ class _ModelCard extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Text(model.name,
-                            style: UETypography.spaceGrotesk(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: UEColors.textPrimary)),
+                        Text(
+                          model.name,
+                          style: UETypography.spaceGrotesk(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: UEColors.textPrimary,
+                          ),
+                        ),
                         if (model.tags.contains('recommended')) ...[
                           const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: UEColors.accent.withOpacity(0.15),
                               borderRadius: BorderRadius.circular(6),
                             ),
-                            child: Text('RECOMMENDED',
-                                style: UETypography.inter(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w600,
-                                    color: UEColors.accent)),
+                            child: Text(
+                              'RECOMMENDED',
+                              style: UETypography.inter(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                                color: UEColors.accent,
+                              ),
+                            ),
                           ),
                         ],
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Text(model.description,
-                        style: UETypography.inter(
-                            fontSize: 11, color: UEColors.textMuted)),
+                    Text(
+                      model.description,
+                      style: UETypography.inter(
+                        fontSize: 11,
+                        color: UEColors.textMuted,
+                      ),
+                    ),
                   ],
                 ),
               ),
               if (isActive)
                 Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: UEColors.accent.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Text('ACTIVE',
-                      style: UETypography.inter(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: UEColors.accent)),
+                  child: Text(
+                    'ACTIVE',
+                    style: UETypography.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: UEColors.accent,
+                    ),
+                  ),
                 ),
             ],
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              _chip('${(model.size / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB'),
+              _chip(
+                '${(model.size / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB',
+              ),
               const SizedBox(width: 8),
               _chip(model.quantization),
               const SizedBox(width: 8),
@@ -253,11 +343,14 @@ class _ModelCard extends StatelessWidget {
         color: UEColors.iconBg,
         borderRadius: BorderRadius.circular(6),
       ),
-      child: Text(label,
-          style: UETypography.inter(
-              fontSize: 10,
-              fontWeight: FontWeight.w500,
-              color: UEColors.textSecondary)),
+      child: Text(
+        label,
+        style: UETypography.inter(
+          fontSize: 10,
+          fontWeight: FontWeight.w500,
+          color: UEColors.textSecondary,
+        ),
+      ),
     );
   }
 
@@ -276,11 +369,14 @@ class _ModelCard extends StatelessWidget {
           children: [
             const Icon(TablerIcons.download, color: Colors.white, size: 16),
             const SizedBox(width: 8),
-            Text('Download',
-                style: UETypography.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white)),
+            Text(
+              'Download',
+              style: UETypography.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
           ],
         ),
       ),
@@ -295,14 +391,21 @@ class _ModelCard extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('Downloading...',
-                style: UETypography.inter(
-                    fontSize: 11, color: UEColors.textMuted)),
-            Text('$pct%',
-                style: UETypography.inter(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: UEColors.accent)),
+            Text(
+              'Downloading...',
+              style: UETypography.inter(
+                fontSize: 11,
+                color: UEColors.textMuted,
+              ),
+            ),
+            Text(
+              '$pct%',
+              style: UETypography.inter(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: UEColors.accent,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 8),
@@ -335,16 +438,21 @@ class _ModelCard extends StatelessWidget {
                 child: Center(
                   child: isLoading
                       ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                        color: Colors.white, strokeWidth: 2),
-                  )
-                      : Text('Load Model',
-                      style: UETypography.inter(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white)),
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : Text(
+                          'Load Model',
+                          style: UETypography.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
                 ),
               ),
             ),
@@ -361,13 +469,20 @@ class _ModelCard extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(TablerIcons.check, color: UEColors.accent, size: 14),
+                  const Icon(
+                    TablerIcons.check,
+                    color: UEColors.accent,
+                    size: 14,
+                  ),
                   const SizedBox(width: 6),
-                  Text('Loaded & Ready',
-                      style: UETypography.inter(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: UEColors.accent)),
+                  Text(
+                    'Loaded & Ready',
+                    style: UETypography.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: UEColors.accent,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -383,7 +498,11 @@ class _ModelCard extends StatelessWidget {
               border: Border.all(color: UEColors.pdfFg.withOpacity(0.3)),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(TablerIcons.trash, color: UEColors.pdfFg, size: 16),
+            child: const Icon(
+              TablerIcons.trash,
+              color: UEColors.pdfFg,
+              size: 16,
+            ),
           ),
         ),
       ],

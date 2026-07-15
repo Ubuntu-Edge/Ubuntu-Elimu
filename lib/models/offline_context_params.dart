@@ -8,10 +8,10 @@ class OfflineContextParams {
   final bool useMlock; // Memory locking
 
   const OfflineContextParams({
-    this.nCtx = 2048,
-    this.nThreads = 4,
-    this.nBatch = 512,
-    this.nGpuLayers = 0, // Default to 0 for CPU-only, adjust for GPU
+    this.nCtx = 1024, // Reduced from 2048 for better mobile compatibility
+    this.nThreads = 2, // Reduced from 4 for low-end devices
+    this.nBatch = 256, // Reduced from 512
+    this.nGpuLayers = 0, // Default to 0 for CPU-only
     this.useMmap = true,
     this.useMlock = false,
   });
@@ -35,25 +35,25 @@ class OfflineContextParams {
     );
   }
 
-  /// High-end device configuration (8GB+ RAM)
+  /// High-end device configuration (6GB+ RAM)
   static const OfflineContextParams highEnd = OfflineContextParams(
-    nCtx: 4096,
-    nThreads: 6,
+    nCtx: 2048,
+    nThreads: 4,
     nBatch: 512,
     nGpuLayers: 99,
   );
 
-  /// Mid-range device configuration (4-8GB RAM)
+  /// Mid-range device configuration (3-6GB RAM)
   static const OfflineContextParams midRange = OfflineContextParams(
-    nCtx: 2048,
-    nThreads: 4,
+    nCtx: 1536,
+    nThreads: 3,
     nBatch: 256,
     nGpuLayers: 20,
   );
 
-  /// Low-end device configuration (<4GB RAM)
+  /// Low-end device configuration (<3GB RAM) - OPTIMIZED FOR 2GB DEVICES
   static const OfflineContextParams lowEnd = OfflineContextParams(
-    nCtx: 1024,
+    nCtx: 512, // Very conservative for 2GB devices
     nThreads: 2,
     nBatch: 128,
     nGpuLayers: 0,
@@ -61,13 +61,13 @@ class OfflineContextParams {
 
   /// Convert to JSON
   Map<String, dynamic> toJson() => {
-    'nCtx': nCtx,
-    'nThreads': nThreads,
-    'nBatch': nBatch,
-    'nGpuLayers': nGpuLayers,
-    'useMmap': useMmap,
-    'useMlock': useMlock,
-  };
+        'nCtx': nCtx,
+        'nThreads': nThreads,
+        'nBatch': nBatch,
+        'nGpuLayers': nGpuLayers,
+        'useMmap': useMmap,
+        'useMlock': useMlock,
+      };
 
   /// Create from JSON
   factory OfflineContextParams.fromJson(Map<String, dynamic> json) {
@@ -82,5 +82,6 @@ class OfflineContextParams {
   }
 
   @override
-  String toString() => 'OfflineContextParams(ctx: $nCtx, threads: $nThreads, batch: $nBatch, gpu: $nGpuLayers)';
+  String toString() =>
+      'OfflineContextParams(ctx: $nCtx, threads: $nThreads, batch: $nBatch, gpu: $nGpuLayers)';
 }

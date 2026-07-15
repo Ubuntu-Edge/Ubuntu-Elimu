@@ -13,6 +13,7 @@ class SettingsProvider with ChangeNotifier {
   bool _socraticMode = true;
   bool _powerMode = true;
   AIBackend _activeBackend = AIBackend.local;
+  String _groqApiKey = '';
 
   // Reference to the real model provider
   OfflineModelProvider? _modelProvider;
@@ -23,6 +24,7 @@ class SettingsProvider with ChangeNotifier {
   bool get powerMode => _powerMode;
   AIBackend get activeBackend => _activeBackend;
   bool get isInitialized => _isInitialized;
+  String get groqApiKey => _groqApiKey;
 
   SettingsProvider() {
     _init();
@@ -30,20 +32,25 @@ class SettingsProvider with ChangeNotifier {
 
   Future<void> _init() async {
     _settingsBox = await Hive.openBox('settings');
-    
+
     _socraticMode = _settingsBox.get('socraticMode', defaultValue: true);
     _powerMode = _settingsBox.get('powerMode', defaultValue: true);
-    
+    _groqApiKey = _settingsBox.get('groqApiKey', defaultValue: '');
+
     // Default to Groq (Proxy) if no preference saved
-    final backendIndex = _settingsBox.get('activeBackend', defaultValue: AIBackend.groq.index);
+    final backendIndex = _settingsBox.get(
+      'activeBackend',
+      defaultValue: AIBackend.groq.index,
+    );
     _activeBackend = AIBackend.values[backendIndex];
-    
+
     _isInitialized = true;
     notifyListeners();
   }
 
-  bool get isModelDownloaded => _modelProvider?.models.any((m) => m.isDownloaded) ?? false;
-  
+  bool get isModelDownloaded =>
+      _modelProvider?.models.any((m) => m.isDownloaded) ?? false;
+
   String get modelName {
     if (_activeBackend == AIBackend.groq) return 'Groq (Secure Proxy)';
     final active = _modelProvider?.activeModel;
@@ -82,6 +89,12 @@ class SettingsProvider with ChangeNotifier {
   void togglePowerMode(bool value) {
     _powerMode = value;
     _settingsBox.put('powerMode', value);
+    notifyListeners();
+  }
+
+  void setGroqApiKey(String value) {
+    _groqApiKey = value;
+    _settingsBox.put('groqApiKey', value);
     notifyListeners();
   }
 

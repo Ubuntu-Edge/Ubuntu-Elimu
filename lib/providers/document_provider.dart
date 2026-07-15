@@ -1,14 +1,12 @@
 import 'dart:io';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:syncfusion_flutter_pdf/pdf.dart';
-import 'package:archive/archive.dart';
-import 'package:xml/xml.dart';
 
 import '../models/document.dart';
+import '../services/document_processing_isolate.dart';
+import '../services/crash_logger_service.dart';
 
 class DocumentProvider with ChangeNotifier {
   List<Document> _documents = [];
@@ -30,8 +28,9 @@ class DocumentProvider with ChangeNotifier {
 
   List<Document> get documents {
     return _documents.where((doc) {
-      final matchesSearch =
-      doc.name.toLowerCase().contains(_searchQuery.toLowerCase());
+      final matchesSearch = doc.name.toLowerCase().contains(
+            _searchQuery.toLowerCase(),
+          );
 
       final matchesCategory = _selectedCategory == 'all' ||
           doc.type.name.toLowerCase() == _selectedCategory.toLowerCase();
@@ -124,22 +123,41 @@ class DocumentProvider with ChangeNotifier {
   // Document Processing Pipeline (AI-ready)
   // ─────────────────────────────────────────────
 
+  /// Process document in background isolate to prevent OOM
   Future<void> _processDocument(Document doc) async {
     if (doc.filePath == null) return;
 
     _setLoading(true);
+    _error = null;
 
     try {
-      final rawText = await _extractText(doc.filePath!, doc.type);
+      debugPrint('🔄 Processing document: ${doc.name}');
+
+      // Extract text in background isolate (prevents OOM on main thread)
+      final rawText = await DocumentProcessingIsolate.extractTextInIsolate(
+        doc.filePath!,
+        doc.type,
+      );
 
       if (rawText.isEmpty) {
         _error = 'Could not extract text from ${doc.name}';
-        _setLoading(false);
+        debugPrint('❌ Text extraction returned empty');
+        notifyListeners();
         return;
       }
 
-      final chunks = _chunkText(rawText);
+      debugPrint('✅ Text extracted (${rawText.length} chars)');
 
+      // Chunk text in background isolate (prevents UI freeze)
+      final chunks = await DocumentProcessingIsolate.chunkTextInIsolate(
+        rawText,
+        chunkSize: 500,
+        overlap: 50,
+      );
+
+      debugPrint('✅ Text chunked into ${chunks.length} pieces');
+
+      // Update document with processed content
       final updated = doc.copyWith(
         extractedText: rawText,
         chunks: chunks,
@@ -147,97 +165,39 @@ class DocumentProvider with ChangeNotifier {
       );
 
       final index = _documents.indexWhere((d) => d.id == doc.id);
-      if (index != -1) _documents[index] = updated;
+      if (index != -1) {
+        _documents[index] = updated;
+      }
 
       _saveToHive(updated);
       notifyListeners();
-    } catch (e) {
+
+      debugPrint('✅ Document processing complete: ${doc.name}');
+    } catch (e, stackTrace) {
       _error = 'Processing failed: $e';
+      debugPrint('❌ Document processing error: $e\n$stackTrace');
+
+      // Log crash with context
+      CrashLoggerService.instance.logCrash(
+        message: 'Document processing failed',
+        error: e,
+        stackTrace: stackTrace,
+        context: {'documentName': doc.name, 'type': doc.type.toString()},
+      );
+
+      notifyListeners();
     }
 
     _setLoading(false);
   }
 
   // ─────────────────────────────────────────────
-  // TEXT EXTRACTION (SYNCFUSION & XML)
-  // ─────────────────────────────────────────────
-
-  Future<String> _extractText(String path, DocType type) async {
-    try {
-      if (type == DocType.pdf) {
-        final bytes = await File(path).readAsBytes();
-        final document = PdfDocument(inputBytes: bytes);
-        final extractor = PdfTextExtractor(document);
-        final text = extractor.extractText();
-        document.dispose();
-        debugPrint('✅ Extracted ${text.length} chars from PDF');
-        return text;
-      }
-
-      if (type == DocType.docx) {
-        // DOCX extraction requires xml parsing inside the open zip archive
-        final bytes = await File(path).readAsBytes();
-        final archive = ZipDecoder().decodeBytes(bytes);
-        final wordFile = archive.findFile('word/document.xml');
-        if (wordFile == null) return '';
-
-        final xmlString = utf8.decode(wordFile.content as List<int>);
-        final document = XmlDocument.parse(xmlString);
-        final text = document.descendants
-            .whereType<XmlElement>()
-            .where((e) => e.name.local == 't')
-            .map((e) => e.innerText)
-            .join(' ');
-
-        debugPrint('✅ Extracted ${text.length} chars from DOCX');
-        return text;
-      }
-
-      return '';
-    } catch (e) {
-      debugPrint('❌ Text extraction failed: $e');
-      return '';
-    }
-  }
-
-  // ─────────────────────────────────────────────
-  // Chunking (RAG ready)
-  // ─────────────────────────────────────────────
-
-  List<String> _chunkText(
-      String text, {
-        int chunkSize = 500,
-        int overlap = 50,
-      }) {
-    final words = text.split(RegExp(r'\s+'));
-    final chunks = <String>[];
-
-    int start = 0;
-
-    while (start < words.length) {
-      final end = (start + chunkSize).clamp(0, words.length);
-
-      chunks.add(words.sublist(start, end).join(' '));
-
-      if (end == words.length) break;
-
-      start += chunkSize - overlap;
-    }
-
-    return chunks;
-  }
-
-  // ─────────────────────────────────────────────
   // Retrieval (basic RAG)
   // ─────────────────────────────────────────────
 
-  List<String> getRelevantChunks(
-      String docId,
-      String query, {
-        int topK = 3,
-      }) {
+  List<String> getRelevantChunks(String docId, String query, {int topK = 3}) {
     final doc = _documents.firstWhere(
-          (d) => d.id == docId,
+      (d) => d.id == docId,
       orElse: () => throw Exception('Document not found'),
     );
 
@@ -247,14 +207,42 @@ class DocumentProvider with ChangeNotifier {
 
     final scored = doc.chunks.map((chunk) {
       final lower = chunk.toLowerCase();
-      final score =
-          queryWords.where((w) => lower.contains(w)).length;
+      final score = queryWords.where((w) => lower.contains(w)).length;
       return MapEntry(chunk, score);
     }).toList();
 
     scored.sort((a, b) => b.value.compareTo(a.value));
 
     return scored.take(topK).map((e) => e.key).toList();
+  }
+
+  /// Finds documents relevant to a freeform topic across the whole library
+  /// (unlike getRelevantChunks, which is scoped to one known document id).
+  /// Used by the Research report flow to ground a report in real sources.
+  List<MapEntry<Document, List<String>>> findRelevantAcrossLibrary(
+    String query, {
+    int topKPerDoc = 2,
+    int maxDocs = 3,
+  }) {
+    final queryWords = query
+        .toLowerCase()
+        .split(RegExp(r'\s+'))
+        .where((w) => w.length > 2)
+        .toList();
+    final results = <MapEntry<Document, List<String>>>[];
+
+    for (final doc in _documents) {
+      if (!doc.isProcessed || doc.chunks.isEmpty) continue;
+      final chunks = getRelevantChunks(doc.id, query, topK: topKPerDoc);
+      final hasMatch = chunks.any((c) {
+        final lower = c.toLowerCase();
+        return queryWords.any((w) => lower.contains(w));
+      });
+      if (hasMatch) results.add(MapEntry(doc, chunks));
+    }
+
+    results.sort((a, b) => b.value.length.compareTo(a.value.length));
+    return results.take(maxDocs).toList();
   }
 
   // ─────────────────────────────────────────────
