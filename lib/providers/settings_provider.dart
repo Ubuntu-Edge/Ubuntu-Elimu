@@ -60,8 +60,7 @@ class SettingsProvider with ChangeNotifier {
 
   AIProvider getAIProvider() {
     if (_activeBackend == AIBackend.groq) {
-      // 🔒 No API Key passed here! The provider talks to your server.
-      return GroqAIProvider();
+      return GroqAIProvider(_groqApiKey);
     }
     return LocalAIProvider();
   }
