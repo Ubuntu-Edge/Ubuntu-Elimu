@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/typography.dart';
 import '../../../../models/chat_message.dart';
+import '../../../widgets/markdown_text.dart';
 import 'citation_card.dart';
 
 class ChatBubble extends StatelessWidget {
@@ -41,8 +42,8 @@ class ChatBubble extends StatelessWidget {
                 ),
                 border: Border.all(color: UEColors.bgBorder, width: 0.5),
               ),
-              child: Text(
-                message.content,
+              child: MarkdownText(
+                text: message.content,
                 style: UETypography.bodySm.copyWith(
                   color: isUser ? UEColors.textPrimary : UEColors.textSecondary,
                   fontSize: 13.5,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/typography.dart';
+import '../../../widgets/markdown_text.dart';
 
 class ReportOutputView extends StatelessWidget {
   final String topic;
@@ -83,8 +84,8 @@ class ReportOutputView extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 10),
-                Text(
-                  content,
+                MarkdownText(
+                  text: content,
                   style: UETypography.inter(
                     fontSize: 13,
                     color: UEColors.textPrimary,
