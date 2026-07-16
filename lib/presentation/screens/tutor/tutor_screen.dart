@@ -489,6 +489,11 @@ class _TutorScreenState extends State<TutorScreen> {
             ModelLangControls(
               selectedLanguage: _language,
               socraticMode: _socraticMode,
+              onSocraticTap: () {
+                final settings = context.read<SettingsProvider>();
+                settings.toggleSocraticMode(!_socraticMode);
+                setState(() => _socraticMode = !_socraticMode);
+              },
               onLanguageTap: () => LanguageSheet.show(
                 context,
                 current: _language,

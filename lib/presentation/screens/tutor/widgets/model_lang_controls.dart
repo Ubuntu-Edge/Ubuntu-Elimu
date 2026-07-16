@@ -10,12 +10,14 @@ class ModelLangControls extends StatelessWidget {
   final Language selectedLanguage;
   final bool socraticMode;
   final VoidCallback onLanguageTap;
+  final VoidCallback onSocraticTap;
 
   const ModelLangControls({
     super.key,
     required this.selectedLanguage,
     required this.socraticMode,
     required this.onLanguageTap,
+    required this.onSocraticTap,
   });
 
   @override
@@ -24,13 +26,17 @@ class ModelLangControls extends StatelessWidget {
       children: [
         _LangPill(language: selectedLanguage, onTap: onLanguageTap),
         const Spacer(),
-        if (socraticMode)
-          Container(
+        GestureDetector(
+          onTap: onSocraticTap,
+          child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: UEColors.onlineBg,
+              color: socraticMode ? UEColors.onlineBg : UEColors.bgCard,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: UEColors.onlineBorder, width: 0.5),
+              border: Border.all(
+                color: socraticMode ? UEColors.onlineBorder : UEColors.bgBorder,
+                width: 0.5,
+              ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -38,22 +44,23 @@ class ModelLangControls extends StatelessWidget {
                 Container(
                   width: 5,
                   height: 5,
-                  decoration: const BoxDecoration(
-                    color: UEColors.online,
+                  decoration: BoxDecoration(
+                    color: socraticMode ? UEColors.online : UEColors.textMuted,
                     shape: BoxShape.circle,
                   ),
                 ),
                 const SizedBox(width: 5),
                 Text(
-                  'Socratic on',
+                  socraticMode ? 'Socratic on' : 'Socratic off',
                   style: UETypography.caption.copyWith(
-                    color: UEColors.online,
+                    color: socraticMode ? UEColors.online : UEColors.textMuted,
                     fontSize: 10,
                   ),
                 ),
               ],
             ),
           ),
+        ),
       ],
     );
   }
