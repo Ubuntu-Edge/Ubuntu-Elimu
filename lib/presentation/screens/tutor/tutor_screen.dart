@@ -170,7 +170,7 @@ class _TutorScreenState extends State<TutorScreen> {
         contextChunks = docProvider.getRelevantChunks(
           _activeDocId!,
           userMessage,
-          topK: 4,
+          topK: 25,
         );
       }
     }
