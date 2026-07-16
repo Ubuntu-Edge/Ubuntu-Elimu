@@ -18,28 +18,35 @@ class QuickActionGrid extends StatelessWidget {
         label: 'Ask Tutor',
         sub: 'Socratic mode on',
         isViolet: false,
-        onTap: () => navProvider.setIndex(1),
+        onTap: () => navProvider.setIndex(2),
       ),
       _ActionItem(
         icon: TablerIcons.upload,
         label: 'Upload Doc',
         sub: 'PDF, PPTX, DOCX',
         isViolet: true,
-        onTap: () => navProvider.setIndex(2),
+        onTap: () => navProvider.setIndex(1),
       ),
       _ActionItem(
         icon: TablerIcons.school,
         label: 'Practice Exam',
-        sub: 'Flashcards · Past papers',
+        sub: 'Coming soon',
         isViolet: false,
-        onTap: () => navProvider.setIndex(3),
+        onTap: () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Practice Exam features are coming soon!'),
+              backgroundColor: UEColors.bgCard,
+            ),
+          );
+        },
       ),
       _ActionItem(
         icon: TablerIcons.world_search,
         label: 'Research',
         sub: 'Build a report',
         isViolet: true,
-        onTap: () => navProvider.setIndex(4),
+        onTap: () => navProvider.setIndex(3),
       ),
     ];
 

@@ -16,7 +16,7 @@ class SessionResumeCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
-        navProvider.setIndex(1); // Jump to Tutor screen
+        navProvider.setIndex(2); // Jump to Tutor screen (was 1)
       },
       child: Container(
         padding: const EdgeInsets.all(16),

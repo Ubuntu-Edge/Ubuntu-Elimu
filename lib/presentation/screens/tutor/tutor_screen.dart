@@ -6,6 +6,7 @@ import '../../../models/chat_message.dart';
 import '../../../models/document.dart';
 import '../../../providers/document_provider.dart';
 import '../../../providers/settings_provider.dart';
+import '../../../providers/navigation_provider.dart';
 import '../../../services/offline_ai_service.dart';
 import '../../../services/ai/base_ai_provider.dart';
 import 'widgets/doc_context_bar.dart';
@@ -409,7 +410,7 @@ class _TutorScreenState extends State<TutorScreen> {
             Row(
               children: [
                 GestureDetector(
-                  onTap: () => Navigator.maybePop(context),
+                  onTap: () => Provider.of<NavigationProvider>(context, listen: false).setIndex(0),
                   child: Container(
                     width: 34,
                     height: 34,

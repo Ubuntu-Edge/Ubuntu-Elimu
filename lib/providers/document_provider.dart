@@ -210,6 +210,88 @@ class DocumentProvider with ChangeNotifier {
   // Retrieval (basic RAG)
   // ─────────────────────────────────────────────
 
+  static final Map<String, String> _irregularVerbs = {
+    'met': 'meet',
+    'saw': 'see',
+    'seen': 'see',
+    'went': 'go',
+    'gone': 'go',
+    'came': 'come',
+    'said': 'say',
+    'got': 'get',
+    'gotten': 'get',
+    'told': 'tell',
+    'thought': 'think',
+    'felt': 'feel',
+    'heard': 'hear',
+    'knew': 'know',
+    'known': 'know',
+    'wrote': 'write',
+    'written': 'write',
+    'took': 'take',
+    'taken': 'take',
+    'brought': 'bring',
+    'bought': 'buy',
+    'lost': 'lose',
+    'found': 'find',
+    'gave': 'give',
+    'given': 'give',
+    'made': 'make',
+    'held': 'hold',
+    'kept': 'keep',
+    'spent': 'spend',
+    'stood': 'stand',
+    'sat': 'sit',
+    'spoken': 'speak',
+    'spoke': 'speak',
+    'fell': 'fall',
+    'fallen': 'fall',
+    'ran': 'run',
+    'read': 'read',
+  };
+
+  String _stemWord(String w) {
+    String word = w.toLowerCase().trim();
+    if (word.isEmpty) return '';
+
+    if (_irregularVerbs.containsKey(word)) {
+      return _irregularVerbs[word]!;
+    }
+
+    if (word.endsWith('ies')) {
+      return '${word.substring(0, word.length - 3)}y';
+    }
+    if (word.endsWith('ing')) {
+      final base = word.substring(0, word.length - 3);
+      if (base.length > 3 &&
+          base[base.length - 1] == base[base.length - 2] &&
+          !_isVowel(base[base.length - 1])) {
+        return base.substring(0, base.length - 1);
+      }
+      return base;
+    }
+    if (word.endsWith('ed')) {
+      return word.substring(0, word.length - 2);
+    }
+    if (word.endsWith('ly')) {
+      return word.substring(0, word.length - 2);
+    }
+    if (word.endsWith('s') &&
+        !word.endsWith('ss') &&
+        !word.endsWith('us') &&
+        !word.endsWith('is')) {
+      if (word.endsWith('es')) {
+        return word.substring(0, word.length - 2);
+      }
+      return word.substring(0, word.length - 1);
+    }
+    return word;
+  }
+
+  bool _isVowel(String char) {
+    return const ['a', 'e', 'i', 'o', 'u'].contains(char);
+  }
+
   List<String> getRelevantChunks(String docId, String query, {int topK = 3}) {
     final doc = _documents.firstWhere(
       (d) => d.id == docId,
@@ -224,30 +306,55 @@ class DocumentProvider with ChangeNotifier {
       'at', 'by', 'from', 'about', 'how', 'why', 'where', 'who', 'were', 
       'was', 'are', 'be', 'been', 'or', 'but', 'not', 'they', 'them', 
       'their', 'his', 'her', 'she', 'he', 'we', 'our', 'us', 'can', 'will', 
-      'would', 'should', 'could', 'me', 'my', 'your'
+      'would', 'should', 'could', 'me', 'my', 'your', 'did', 'do', 'does'
     };
 
     final cleanQuery = query.toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
-    final filteredWords = cleanQuery
-        .split(RegExp(r'\s+'))
-        .where((w) => w.isNotEmpty && !stopWords.contains(w))
+    final words = cleanQuery.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+
+    // Stem query words
+    final queryStems = words
+        .where((w) => !stopWords.contains(w))
+        .map(_stemWord)
+        .where((s) => s.isNotEmpty)
         .toList();
 
-    final queryWords = filteredWords.isEmpty 
-        ? cleanQuery.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList() 
-        : filteredWords;
+    // Fallback to all words if queryStems is empty
+    final finalStems = queryStems.isEmpty 
+        ? words.map(_stemWord).where((s) => s.isNotEmpty).toList() 
+        : queryStems;
 
-    if (queryWords.isEmpty) return doc.chunks.take(topK).toList();
+    if (finalStems.isEmpty) return doc.chunks.take(topK).toList();
 
     final scored = doc.chunks.map((chunk) {
-      final lower = chunk.toLowerCase();
-      final score = queryWords.where((w) => lower.contains(w)).length;
+      final chunkWords = chunk
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^\w\s]'), '')
+          .split(RegExp(r'\s+'))
+          .where((w) => w.isNotEmpty);
+
+      final chunkStems = chunkWords.map(_stemWord).toSet();
+
+      int score = 0;
+      for (final qStem in finalStems) {
+        if (chunkStems.contains(qStem)) {
+          score += 5; // Stem matched
+        } else if (chunk.toLowerCase().contains(qStem)) {
+          score += 2; // Substring matched
+        }
+      }
       return MapEntry(chunk, score);
     }).toList();
 
     scored.sort((a, b) => b.value.compareTo(a.value));
 
-    return scored.take(topK).map((e) => e.key).toList();
+    // Return matched chunks (having score > 0), otherwise fallback to first chunks
+    final matches = scored.where((e) => e.value > 0).map((e) => e.key).toList();
+    if (matches.isNotEmpty) {
+      return matches.take(topK).toList();
+    }
+
+    return doc.chunks.take(topK).toList();
   }
 
   /// Finds documents relevant to a freeform topic across the whole library
