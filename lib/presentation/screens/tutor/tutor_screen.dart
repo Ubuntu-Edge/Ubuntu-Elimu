@@ -29,6 +29,7 @@ class _TutorScreenState extends State<TutorScreen> {
   bool _socraticMode = true;
 
   Document? _activeDoc;
+  String? _activeDocId; // track by ID to always fetch fresh from provider
   final List<ChatMessage> _messages = [];
 
   @override
@@ -40,9 +41,13 @@ class _TutorScreenState extends State<TutorScreen> {
       setState(() => _socraticMode = settings.socraticMode);
 
       // Auto-select most recent document
-      final docs = context.read<DocumentProvider>().documents;
-      if (docs.isNotEmpty) {
-        setState(() => _activeDoc = docs.first);
+      final allDocs = context.read<DocumentProvider>().allDocuments;
+      if (allDocs.isNotEmpty) {
+        final doc = allDocs.first;
+        setState(() {
+          _activeDoc = doc;
+          _activeDocId = doc.id;
+        });
       }
 
       _addWelcomeMessage();
@@ -70,14 +75,21 @@ class _TutorScreenState extends State<TutorScreen> {
     super.dispose();
   }
 
-  void _scrollToBottom() {
+  void _scrollToBottom({bool animate = true}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
+        if (animate) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+          );
+        } else {
+          // Jump immediately during streaming so the view follows tokens
+          _scrollController.jumpTo(
+            _scrollController.position.maxScrollExtent,
+          );
+        }
       }
     });
   }
@@ -144,12 +156,17 @@ class _TutorScreenState extends State<TutorScreen> {
       ));
     });
 
-    // Get relevant chunks from active document for RAG
+    // Get relevant chunks from active document for RAG.
+    // Always look up the document fresh from the provider (by ID) so we get
+    // the latest processed state with all chunks — the local _activeDoc ref
+    // may be stale if processing completed after selection.
     List<String> contextChunks = [];
-    if (_activeDoc != null && _activeDoc!.isProcessed) {
-      contextChunks = context
-          .read<DocumentProvider>()
-          .getRelevantChunks(_activeDoc!.id, userMessage);
+    if (_activeDocId != null) {
+      final docProvider = context.read<DocumentProvider>();
+      final liveDoc = docProvider.getDocumentById(_activeDocId!);
+      if (liveDoc != null && liveDoc.isProcessed && liveDoc.chunks.isNotEmpty) {
+        contextChunks = docProvider.getRelevantChunks(_activeDocId!, userMessage);
+      }
     }
 
     final systemPrompt = _buildSystemPrompt(contextChunks);
@@ -167,7 +184,8 @@ class _TutorScreenState extends State<TutorScreen> {
             );
           }
         });
-        _scrollToBottom();
+        // Use jump (no animation) during streaming so the view reliably follows
+        _scrollToBottom(animate: false);
       },
       onError: (e) {
         setState(() {
@@ -201,7 +219,9 @@ class _TutorScreenState extends State<TutorScreen> {
   }
 
   void _showDocPicker() {
-    final docs = context.read<DocumentProvider>().documents;
+    // Always use allDocuments (unfiltered) so search/category state doesn't
+    // hide documents from the picker
+    final docs = context.read<DocumentProvider>().allDocuments;
     if (docs.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -226,12 +246,38 @@ class _TutorScreenState extends State<TutorScreen> {
             ),
           ),
           onTap: () {
-            setState(() => _activeDoc = doc);
+            setState(() {
+              _activeDoc = doc;
+              _activeDocId = doc.id;
+            });
+            // Update welcome message to reflect the newly selected document
+            _updateWelcomeMessage(doc);
             Navigator.pop(context);
           },
         )).toList(),
       ),
     );
+  }
+
+  /// Replaces the initial welcome message with one referencing the new doc.
+  void _updateWelcomeMessage(Document doc) {
+    setState(() {
+      final welcomeIdx = _messages.indexWhere((m) => m.id == 'welcome');
+      final updated = ChatMessage(
+        id: 'welcome',
+        role: MessageRole.ai,
+        content:
+            "I'm ready to help you study **${doc.name}**. What would you like to explore?",
+        timestamp: DateTime.now(),
+        model: _model,
+        language: _language,
+      );
+      if (welcomeIdx != -1) {
+        _messages[welcomeIdx] = updated;
+      } else {
+        _messages.insert(0, updated);
+      }
+    });
   }
 
   void _openCitation(CitationRef citation) {

@@ -26,6 +26,7 @@ class DocumentProvider with ChangeNotifier {
   String get searchQuery => _searchQuery;
   String get selectedCategory => _selectedCategory;
 
+  /// Filtered list (search + category) — used by the Library screen.
   List<Document> get documents {
     return _documents.where((doc) {
       final matchesSearch = doc.name.toLowerCase().contains(
@@ -37,6 +38,20 @@ class DocumentProvider with ChangeNotifier {
 
       return matchesSearch && matchesCategory;
     }).toList();
+  }
+
+  /// Unfiltered list — use wherever search/category state must not hide docs
+  /// (e.g., the AI Tutor doc picker).
+  List<Document> get allDocuments => List.unmodifiable(_documents);
+
+  /// Looks up a document by its ID from the live (unfiltered) list.
+  /// Returns null if not found.
+  Document? getDocumentById(String id) {
+    try {
+      return _documents.firstWhere((d) => d.id == id);
+    } catch (_) {
+      return null;
+    }
   }
 
   List<Document> get recentUploads {
