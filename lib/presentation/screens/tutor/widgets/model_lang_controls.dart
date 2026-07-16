@@ -3,19 +3,18 @@ import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/typography.dart';
 import '../../../../models/chat_message.dart';
 
+/// Shows only the language selector + Socratic mode badge.
+/// Model chips (3B / 1B Lite) have been removed — model selection is
+/// handled internally by the AI provider.
 class ModelLangControls extends StatelessWidget {
-  final ModelMode selectedModel;
   final Language selectedLanguage;
   final bool socraticMode;
-  final ValueChanged<ModelMode> onModelChanged;
   final VoidCallback onLanguageTap;
 
   const ModelLangControls({
     super.key,
-    required this.selectedModel,
     required this.selectedLanguage,
     required this.socraticMode,
-    required this.onModelChanged,
     required this.onLanguageTap,
   });
 
@@ -23,89 +22,39 @@ class ModelLangControls extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        _ModelPill(
-          label: ModelMode.power.label,
-          active: selectedModel == ModelMode.power,
-          onTap: () => onModelChanged(ModelMode.power),
-        ),
-        const SizedBox(width: 8),
-        _ModelPill(
-          label: ModelMode.lite.label,
-          active: selectedModel == ModelMode.lite,
-          onTap: () => onModelChanged(ModelMode.lite),
-        ),
-        const SizedBox(width: 8),
-        _LangPill(
-          language: selectedLanguage,
-          onTap: onLanguageTap,
-        ),
+        _LangPill(language: selectedLanguage, onTap: onLanguageTap),
         const Spacer(),
         if (socraticMode)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
               color: UEColors.onlineBg,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: UEColors.onlineBorder, width: 0.5),
             ),
-            child: Text(
-              'Socratic on',
-              style: UETypography.caption.copyWith(
-                color: UEColors.online,
-                fontSize: 10,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 5,
+                  height: 5,
+                  decoration: const BoxDecoration(
+                    color: UEColors.online,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  'Socratic on',
+                  style: UETypography.caption.copyWith(
+                    color: UEColors.online,
+                    fontSize: 10,
+                  ),
+                ),
+              ],
             ),
           ),
       ],
-    );
-  }
-}
-
-class _ModelPill extends StatelessWidget {
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  const _ModelPill({
-    required this.label,
-    required this.active,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-        decoration: BoxDecoration(
-          color: active ? UEColors.bgElevated : UEColors.bgCard,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: active ? UEColors.indigo : UEColors.bgBorder,
-            width: 0.5,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.memory_rounded,
-              size: 12,
-              color: active ? UEColors.indigo : UEColors.textMuted,
-            ),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: UETypography.label.copyWith(
-                color: active ? UEColors.indigo : UEColors.textMuted,
-                fontSize: 11,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

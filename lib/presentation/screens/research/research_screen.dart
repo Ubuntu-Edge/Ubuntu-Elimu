@@ -19,7 +19,7 @@ class ResearchScreen extends StatefulWidget {
 class _ResearchScreenState extends State<ResearchScreen> {
   final ScrollController _scrollController = ScrollController();
   final List<ChatMessage> _messages = [];
-  bool _isTyping = false;
+  bool _isStreaming = false;
 
   @override
   void initState() {
@@ -44,32 +44,38 @@ class _ResearchScreenState extends State<ResearchScreen> {
     super.dispose();
   }
 
-  void _scrollToBottom() {
+  void _scrollToBottom({bool animate = true}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.easeOutCubic,
-        );
+        if (animate) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutCubic,
+          );
+        } else {
+          _scrollController.jumpTo(
+            _scrollController.position.maxScrollExtent,
+          );
+        }
       }
     });
   }
 
   void _handleSend(String text) {
-    if (text.trim().isEmpty) return;
+    if (text.trim().isEmpty || _isStreaming) return;
 
+    // Prefix user IDs to avoid collision with AI message IDs
+    final userMsgId = 'user_${DateTime.now().millisecondsSinceEpoch}';
     setState(() {
       _messages.add(ChatMessage(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: userMsgId,
         role: MessageRole.user,
         content: text,
         timestamp: DateTime.now(),
       ));
-      _isTyping = true;
     });
     _scrollToBottom();
-
     _streamAIResponse(text);
   }
 
@@ -79,9 +85,8 @@ class _ResearchScreenState extends State<ResearchScreen> {
 
     if (settings.activeBackend == AIBackend.local && !settings.isModelDownloaded) {
       setState(() {
-        _isTyping = false;
         _messages.add(ChatMessage(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          id: 'err_${DateTime.now().millisecondsSinceEpoch}',
           role: MessageRole.ai,
           content: '⚠️ No model loaded. Please download and activate a model in Settings.',
           timestamp: DateTime.now(),
@@ -93,9 +98,8 @@ class _ResearchScreenState extends State<ResearchScreen> {
 
     if (settings.activeBackend == AIBackend.groq && settings.groqApiKey.isEmpty) {
       setState(() {
-        _isTyping = false;
         _messages.add(ChatMessage(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          id: 'err_${DateTime.now().millisecondsSinceEpoch}',
           role: MessageRole.ai,
           content: '⚠️ Groq API key is missing. Please check your settings.',
           timestamp: DateTime.now(),
@@ -105,42 +109,59 @@ class _ResearchScreenState extends State<ResearchScreen> {
       return;
     }
 
-    final aiMessageId = DateTime.now().millisecondsSinceEpoch.toString();
+    // Prefix AI IDs to guarantee no collision with user message IDs
+    final aiMsgId = 'ai_${DateTime.now().millisecondsSinceEpoch}';
+
     setState(() {
-      _isTyping = false;
+      _isStreaming = true;
       _messages.add(ChatMessage(
-        id: aiMessageId,
+        id: aiMsgId,
         role: MessageRole.ai,
         content: '',
         timestamp: DateTime.now(),
       ));
     });
+    _scrollToBottom();
 
-    final stream = aiProvider.streamGenerate(
+    aiProvider.streamGenerate(
       userMessage,
-      systemPrompt: 'You are a helpful AI study companion for students. Be concise, clear, and educational.',
-    );
-
-    stream.listen(
+      systemPrompt:
+          'You are Elimu, a helpful AI study companion for students. '
+          'Be concise, clear, and educational. Use markdown formatting where helpful.',
+      maxTokens: 1024,
+    ).listen(
       (token) {
         if (!mounted) return;
         setState(() {
-          final index = _messages.indexWhere((m) => m.id == aiMessageId);
-          if (index != -1) {
-            _messages[index] = _messages[index].copyWith(
-              content: _messages[index].content + token,
+          final idx = _messages.indexWhere((m) => m.id == aiMsgId);
+          if (idx != -1) {
+            _messages[idx] = _messages[idx].copyWith(
+              content: _messages[idx].content + token,
+            );
+          }
+        });
+        _scrollToBottom(animate: false);
+      },
+      onDone: () {
+        if (!mounted) return;
+        setState(() {
+          _isStreaming = false;
+          final idx = _messages.indexWhere((m) => m.id == aiMsgId);
+          if (idx != -1 && _messages[idx].content.trim().isEmpty) {
+            _messages[idx] = _messages[idx].copyWith(
+              content: '❌ No response received. Please check your API key or try again.',
             );
           }
         });
         _scrollToBottom();
       },
-      onDone: () => _scrollToBottom(),
       onError: (e) {
         if (!mounted) return;
         setState(() {
-          final index = _messages.indexWhere((m) => m.id == aiMessageId);
-          if (index != -1) {
-            _messages[index] = _messages[index].copyWith(
+          _isStreaming = false;
+          final idx = _messages.indexWhere((m) => m.id == aiMsgId);
+          if (idx != -1) {
+            _messages[idx] = _messages[idx].copyWith(
               content: '❌ Error: $e',
             );
           }
@@ -169,7 +190,7 @@ class _ResearchScreenState extends State<ResearchScreen> {
           ),
           ChatInputBar(
             onSend: _handleSend,
-            isTyping: _isTyping,
+            isTyping: _isStreaming,
           ),
         ],
       ),
@@ -180,9 +201,11 @@ class _ResearchScreenState extends State<ResearchScreen> {
     return Consumer<SettingsProvider>(
       builder: (context, settings, child) {
         final isLocal = settings.activeBackend == AIBackend.local;
-        final hasEngine = isLocal ? OfflineAIService.instance.isModelLoaded : settings.groqApiKey.isNotEmpty;
+        final hasEngine = isLocal
+            ? OfflineAIService.instance.isModelLoaded
+            : settings.groqApiKey.isNotEmpty;
         final engineName = isLocal ? 'Local LLM' : 'Groq Cloud';
-        
+
         return Container(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
           decoration: BoxDecoration(
@@ -195,6 +218,32 @@ class _ResearchScreenState extends State<ResearchScreen> {
             bottom: false,
             child: Row(
               children: [
+                // Avatar
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF6C63FF), Color(0xFF9B59B6)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: UEColors.indigo.withOpacity(0.35),
+                        blurRadius: 10,
+                        spreadRadius: 0,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.auto_awesome_rounded,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 10),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -203,7 +252,8 @@ class _ResearchScreenState extends State<ResearchScreen> {
                         Text('Study Companion', style: UETypography.h3),
                         const SizedBox(width: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
                             color: UEColors.indigo.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(6),
@@ -223,14 +273,14 @@ class _ResearchScreenState extends State<ResearchScreen> {
                     Row(
                       children: [
                         Container(
-                          width: 6,
-                          height: 6,
+                          width: 5,
+                          height: 5,
                           decoration: BoxDecoration(
                             color: hasEngine ? Colors.green : Colors.amber,
                             shape: BoxShape.circle,
                           ),
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 5),
                         Text(
                           hasEngine ? 'Active & Ready' : 'Engine Offline',
                           style: UETypography.caption.copyWith(
@@ -244,11 +294,13 @@ class _ResearchScreenState extends State<ResearchScreen> {
                 ),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.refresh_rounded, color: UEColors.textDim, size: 20),
+                  icon: const Icon(Icons.refresh_rounded,
+                      color: UEColors.textDim, size: 20),
                   tooltip: 'Clear Chat',
                   onPressed: () {
                     setState(() {
                       _messages.clear();
+                      _isStreaming = false;
                       _addWelcomeMessage();
                     });
                   },
