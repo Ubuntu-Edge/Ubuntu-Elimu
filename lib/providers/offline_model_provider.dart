@@ -169,7 +169,6 @@ class OfflineModelProvider extends ChangeNotifier {
             '• Restart your device\n'
             '• Use a smaller/lighter model\n'
             '• Try again when fewer apps are running\n\n'
-            'Required: ~800MB free RAM\n'
             'Try checking your RAM usage in Android Settings.';
       } else if (e.toString().contains('timeout')) {
         _error = 'Loading Timeout ⏱️\n\n'

@@ -52,17 +52,21 @@ class OfflineAIService {
       final memoryInfo = await MemoryMonitorService.instance.getMemoryInfo();
       debugPrint('💾 Memory status: $memoryInfo');
 
-      // Check if we have sufficient memory (need at least 800MB free)
+      // Check if we have sufficient memory for the runtime state (KV cache, context)
+      // We rely on memory-mapping (mmap) for the actual model weights, which means 
+      // the OS can page them from disk (RAM Plus) without needing physical RAM for the whole model.
+      final requiredMB = 600;
+
       final hasSufficientMemory =
           await MemoryMonitorService.instance.hasSufficientMemory(
-        minRequiredMB: 800,
+        minRequiredMB: requiredMB,
       );
 
       if (!hasSufficientMemory) {
         final availMB =
             await MemoryMonitorService.instance.getAvailableMemoryMB();
         throw Exception(
-          'Insufficient memory to load model. Available: ${availMB}MB, Required: 800MB. '
+          'Insufficient memory to load model. Available: ${availMB}MB, Required: ${requiredMB}MB. '
           'Please close other apps and try again.',
         );
       }
