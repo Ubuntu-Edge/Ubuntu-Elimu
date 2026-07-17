@@ -134,17 +134,12 @@ class OfflineModelProvider extends ChangeNotifier {
 
       await _requestModelLoadingPermissions();
 
-      // Load model with error handling
+      // Load model with context parameters
       debugPrint('🔄 Loading model into memory...');
-      final loaded = await OfflineAIService.instance
-          .loadModel(modelPath: modelPath, model: model)
-          .timeout(
-        const Duration(seconds: 60), // Increased timeout for memory checks
-        onTimeout: () {
-          throw TimeoutException(
-            'Model loading timed out after 60 seconds',
-          );
-        },
+      final loaded = await OfflineAIService.instance.loadModel(
+        modelPath: modelPath,
+        model: model,
+        contextParams: _contextParams,
       );
 
       if (!loaded) {

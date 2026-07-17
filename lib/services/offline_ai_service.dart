@@ -40,81 +40,35 @@ class OfflineAIService {
     required OfflineModel model,
     OfflineContextParams? contextParams,
   }) async {
-    if (_isUnsupportedAbi) {
-      debugPrint('⚠️ Emulator detected: skipping model load');
-      _loadedModel = model;
-      _loadedModelPath = modelPath;
-      return false;
-    }
-
     try {
-      // Check memory before loading
-      final memoryInfo = await MemoryMonitorService.instance.getMemoryInfo();
-      debugPrint('💾 Memory status: $memoryInfo');
+      debugPrint('🔄 Loading model from: $modelPath');
 
-      // Check if we have sufficient memory for the runtime state (KV cache, context)
-      // We rely on memory-mapping (mmap) for the actual model weights, which means 
-      // the OS can page them from disk (RAM Plus) without needing physical RAM for the whole model.
-      final requiredMB = 600;
-
-      final hasSufficientMemory =
-          await MemoryMonitorService.instance.hasSufficientMemory(
-        minRequiredMB: requiredMB,
-      );
-
-      if (!hasSufficientMemory) {
-        final availMB =
-            await MemoryMonitorService.instance.getAvailableMemoryMB();
-        throw Exception(
-          'Insufficient memory to load model. Available: ${availMB}MB, Required: ${requiredMB}MB. '
-          'Please close other apps and try again.',
-        );
+      // Check if file exists
+      final file = File(modelPath);
+      if (!await file.exists()) {
+        debugPrint('❌ Model file not found: $modelPath');
+        return false;
       }
 
-      // Get device-optimized settings
-      final recommendedContext =
-          await MemoryMonitorService.instance.getRecommendedContextSize();
-      final recommendedThreads =
-          await MemoryMonitorService.instance.getRecommendedThreadCount();
-
-      // Use recommended settings or user-provided (whichever is safer)
-      final finalContext = contextParams?.nCtx != null
-          ? (contextParams!.nCtx! < recommendedContext
-              ? contextParams.nCtx!
-              : recommendedContext)
-          : recommendedContext;
-
-      final finalThreads = contextParams?.nThreads != null
-          ? (contextParams!.nThreads! < recommendedThreads
-              ? contextParams.nThreads!
-              : recommendedThreads)
-          : recommendedThreads;
-
-      debugPrint('🔄 Loading model: $modelPath');
-      debugPrint(
-          '   Threads: $finalThreads (recommended: $recommendedThreads)');
-      debugPrint(
-          '   Context size: $finalContext (recommended: $recommendedContext)');
-      debugPrint('   GPU layers: ${contextParams?.nGpuLayers ?? 0}');
-
-      // Unload any existing model first to free memory
-      if (_isModelLoaded && _controller != null) {
-        debugPrint('🔄 Unloading previous model...');
+      // Unload existing model if any
+      if (_isModelLoaded) {
         await unloadModel();
-
-        // Force garbage collection and wait
-        MemoryMonitorService.instance.forceGarbageCollection();
-        await Future.delayed(const Duration(seconds: 1));
       }
 
-      _controller ??= llama.LlamaController();
+      // Extract context params
+      final params = contextParams ?? const OfflineContextParams();
 
-      // Load model with device-optimized settings
+      // Always create a brand-new controller to prevent JNI reuse memory crashes
+      _controller = llama.LlamaController();
+
+      // Load model with settings
       await _controller!.loadModel(
         modelPath: modelPath,
-        threads: finalThreads,
-        contextSize: finalContext,
-        gpuLayers: contextParams?.nGpuLayers ?? 0,
+        threads: params.nThreads ?? 4,
+        contextSize: params.nCtx ?? 2048,
+        gpuLayers: (params.nGpuLayers != null && params.nGpuLayers! > 0)
+            ? params.nGpuLayers
+            : null,
       );
 
       _isModelLoaded = true;
@@ -122,34 +76,18 @@ class OfflineAIService {
       _loadedModel = model;
 
       debugPrint('✅ Model loaded successfully: ${model.name}');
-
-      // Log final memory after loading
-      final memoryAfter = await MemoryMonitorService.instance.getMemoryInfo();
-      debugPrint('💾 Memory after loading: $memoryAfter');
+      debugPrint('   Context size: ${params.nCtx}');
+      debugPrint('   Threads: ${params.nThreads}');
 
       return true;
     } catch (e, stackTrace) {
       debugPrint('❌ Failed to load model: $e\nStackTrace: $stackTrace');
 
-      // Get memory info for crash context
-      final memoryInfo = await MemoryMonitorService.instance.getMemoryInfo();
-
-      // Report to crash monitoring
-      CrashLoggerService.instance.logCrash(
-        message: 'Model loading failed',
-        error: e,
-        stackTrace: stackTrace,
-        context: {
-          'modelName': model.name,
-          'modelPath': modelPath,
-          'contextSize': contextParams?.nCtx ?? 'auto',
-          'memoryInfo': memoryInfo,
-        },
-      );
-
       _isModelLoaded = false;
       _controller = null;
-      rethrow;
+      _loadedModelPath = null;
+      _loadedModel = null;
+      return false;
     }
   }
 
