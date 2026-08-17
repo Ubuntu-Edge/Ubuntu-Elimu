@@ -41,9 +41,8 @@ class MainShell extends StatelessWidget {
                         index: navProvider.selectedIndex,
                         children: const [
                           HomeScreen(),
-                          TutorScreen(),
                           LibraryScreen(),
-                          ExamPrepScreen(),
+                          TutorScreen(),
                           ResearchScreen(),
                           SettingsScreen(),
                         ],
@@ -130,7 +129,8 @@ class _OfflineBadgeState extends State<_OfflineBadge>
   Widget build(BuildContext context) {
     final activeBg = widget.isOffline ? UEColors.onlineBg : UEColors.bgElevated;
     final activeBorder =
-        widget.isOffline ? UEColors.onlineBorder : UEColors.bgBorder;    final activeColor = widget.isOffline ? UEColors.online : UEColors.indigo;
+        widget.isOffline ? UEColors.onlineBorder : UEColors.bgBorder;
+    final activeColor = widget.isOffline ? UEColors.online : UEColors.indigo;
     final labelText =
         widget.isOffline ? 'Offline · Ready' : 'Online · Syncing';
 
@@ -189,10 +189,9 @@ class _BottomNav extends StatelessWidget {
 
   static const List<_BottomNavItem> _navItems = [
     _BottomNavItem(icon: Icons.home_rounded, label: 'Home'),
-    _BottomNavItem(icon: Icons.chat_bubble_outline_rounded, label: 'Tutor'),
     _BottomNavItem(icon: Icons.folder_copy_outlined, label: 'Library'),
-    _BottomNavItem(icon: Icons.menu_book_outlined, label: 'Exam'),
-    _BottomNavItem(icon: Icons.travel_explore_rounded, label: 'Research'),
+    _BottomNavItem(icon: Icons.chat_bubble_outline_rounded, label: 'Tutor'),
+    _BottomNavItem(icon: Icons.auto_awesome_rounded, label: 'Research'),
     _BottomNavItem(icon: Icons.settings_outlined, label: 'Settings'),
   ];
 

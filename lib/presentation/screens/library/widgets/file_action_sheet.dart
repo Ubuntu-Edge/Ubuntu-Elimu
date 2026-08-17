@@ -73,7 +73,7 @@ class FileActionSheet extends StatelessWidget {
                   '${doc.sizeLabel} · Socratic Context Active',
                 );
                 Navigator.pop(context);
-                navProvider.setIndex(1); // switch to tutor
+                navProvider.setIndex(2); // switch to tutor
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text('Socratic tutor loaded with: ${doc.name}'),

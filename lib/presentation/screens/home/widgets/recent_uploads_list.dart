@@ -59,7 +59,7 @@ class RecentUploadsList extends StatelessWidget {
                 doc.name,
                 '$sizeStr · Socratic Context Active',
               );
-              navProvider.setIndex(1); // switch to tutor
+              navProvider.setIndex(2); // switch to tutor
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text('Activated Socratic context: ${doc.name}'),
