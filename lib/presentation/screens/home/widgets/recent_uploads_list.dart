@@ -40,7 +40,7 @@ class RecentUploadsList extends StatelessWidget {
         final timeStr = DateUtilsHelper.getRelativeTime(doc.addedAt);
 
         // Derive tag and tagColor locally as they aren't part of the Document model
-        String tag = doc.type.name.toUpperCase();
+        String tag = doc.type.extension;
         Color tagColor = iconFg;
         
         if (doc.flashcardCount != null && doc.flashcardCount! > 0) {

@@ -203,7 +203,7 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
               ),
               const SizedBox(height: 8),
               Text(
-                "File: ${doc.name} (${doc.type?.name?.toUpperCase() ?? 'DOC'})\nStatus: ${doc.isProcessed ? 'Processed for Offline AI' : 'Ready'}",
+                "File: ${doc.name} (${doc.type.extension})\nStatus: ${doc.isProcessed ? 'Processed for Offline AI' : 'Ready'}",
                 style: UETypography.inter(
                   fontSize: 12,
                   color: UEColors.textMuted,

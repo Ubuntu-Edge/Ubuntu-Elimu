@@ -1,6 +1,16 @@
 enum DocType { pdf, pptx, docx, image, other }
 
 extension DocTypeExt on DocType {
+  String get name {
+    switch (this) {
+      case DocType.pdf:   return 'pdf';
+      case DocType.pptx:  return 'pptx';
+      case DocType.docx:  return 'docx';
+      case DocType.image: return 'image';
+      case DocType.other: return 'other';
+    }
+  }
+
   String get extension {
     switch (this) {
       case DocType.pdf:   return 'PDF';
