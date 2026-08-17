@@ -82,22 +82,11 @@ class _StatusBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            '9:41',
-            style: UETypography.label.copyWith(
-              color: UEColors.textMuted,
-              fontSize: 12,
-            ),
-          ),
-          _OfflineBadge(
-            isOffline: isOffline,
-            onTap: onToggleOffline,
-          ),
-          const Icon(Icons.battery_3_bar, size: 18, color: UEColors.textMuted),
-        ],
+      child: Center(
+        child: _OfflineBadge(
+          isOffline: isOffline,
+          onTap: onToggleOffline,
+        ),
       ),
     );
   }
