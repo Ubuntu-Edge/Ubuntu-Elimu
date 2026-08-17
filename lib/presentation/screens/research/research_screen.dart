@@ -59,29 +59,6 @@ class _ResearchScreenState extends State<ResearchScreen> {
   String? _error;
   StreamSubscription<String>? _streamSub;
 
-  final List<Map<String, String>> _suggestions = [
-    {
-      'icon': '💡',
-      'title': 'Quantum Computing',
-      'prompt': 'Explain quantum computing in simple terms for a student.',
-    },
-    {
-      'icon': '🧬',
-      'title': 'Photosynthesis vs Respiration',
-      'prompt': 'Compare photosynthesis and cellular respiration in detail.',
-    },
-    {
-      'icon': '📜',
-      'title': 'Causes of World War I',
-      'prompt': 'Summarize the main geopolitical causes and timeline of World War I.',
-    },
-    {
-      'icon': '🤖',
-      'title': 'Transformer Neural Networks',
-      'prompt': 'How do self-attention and transformer models work in AI?',
-    },
-  ];
-
   @override
   void dispose() {
     _streamSub?.cancel();
@@ -371,61 +348,6 @@ class _ResearchScreenState extends State<ResearchScreen> {
               color: UEColors.textMuted,
               height: 1.4,
             ),
-          ),
-          const SizedBox(height: 32),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'SUGGESTED TOPICS',
-              style: UETypography.inter(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: UEColors.textMuted,
-                letterSpacing: 0.8,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _suggestions.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 1.45,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-            ),
-            itemBuilder: (context, i) {
-              final item = _suggestions[i];
-              return InkWell(
-                onTap: () => _sendMessage(item['prompt']!),
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: UEColors.surface,
-                    border: Border.all(color: UEColors.border, width: 0.5),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(item['icon']!, style: const TextStyle(fontSize: 18)),
-                      const Spacer(),
-                      Text(
-                        item['title']!,
-                        style: UETypography.spaceGrotesk(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: UEColors.textPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
           ),
         ],
       ),
