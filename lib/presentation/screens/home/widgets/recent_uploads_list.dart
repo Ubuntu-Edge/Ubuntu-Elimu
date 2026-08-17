@@ -7,6 +7,7 @@ import '../../../../core/utils/date_utils.dart';
 import '../../../../providers/document_provider.dart';
 import '../../../../providers/navigation_provider.dart';
 import '../../../../providers/session_provider.dart';
+import '../../../../models/document.dart';
 
 class RecentUploadsList extends StatelessWidget {
   const RecentUploadsList({super.key});

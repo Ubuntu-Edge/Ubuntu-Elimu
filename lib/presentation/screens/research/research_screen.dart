@@ -8,6 +8,7 @@ import '../../../core/theme/typography.dart';
 import '../../../providers/document_provider.dart';
 import '../../../providers/offline_model_provider.dart';
 import '../../../services/offline_ai_service.dart';
+import 'package:denizen_ai/denizen_ai.dart';
 
 class ResearchMessage {
   final String id;
