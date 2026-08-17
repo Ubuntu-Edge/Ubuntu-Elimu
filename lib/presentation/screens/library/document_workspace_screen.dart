@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
+import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
+import '../../../models/document.dart';
 import '../../../services/offline_ai_service.dart';
 
 class DocumentWorkspaceScreen extends StatefulWidget {
@@ -246,53 +249,52 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
     }
   }
 
-  // ================= ORIGINAL READER =================
+  // ================= DOCUMENT READER =================
   Widget _buildReaderTab(dynamic doc) {
-    final docName = doc.name?.toString() ?? 'Document';
-    final docTypeStr = (doc.type != null) ? doc.type.extension : 'FILE';
-    final isProcessed = doc.isProcessed == true;
+    final filePath = doc.filePath?.toString();
+    final docType = doc.type;
+    final isPdf = docType == DocType.pdf;
 
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: UEColors.surface,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                "📄 Document Reader",
-                style: UETypography.spaceGrotesk(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: UEColors.textPrimary,
+    // ── PDF: use Syncfusion native renderer ──────────────────
+    if (isPdf && filePath != null && File(filePath).existsSync()) {
+      return _PdfReaderView(filePath: filePath);
+    }
+
+    // ── DOCX / other: rich scrollable text view ──────────────
+    final text = _safeExtractedText(doc);
+    final hasText = text.trim().isNotEmpty;
+
+    return Container(
+      color: UEColors.bg,
+      child: hasText
+          ? Scrollbar(
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+                child: SelectableText(
+                  text,
+                  style: UETypography.inter(
+                    fontSize: 14,
+                    color: UEColors.textSecondary,
+                    height: 1.75,
+                  ),
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                "File: $docName ($docTypeStr)\nStatus: ${isProcessed ? 'Processed for Offline AI' : 'Ready'}",
-                style: UETypography.inter(
-                  fontSize: 12,
-                  color: UEColors.textMuted,
-                ),
+            )
+          : Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(TablerIcons.file_off, color: UEColors.textDim, size: 48),
+                  const SizedBox(height: 12),
+                  Text(
+                    'No readable text found in this document.',
+                    style: UETypography.inter(fontSize: 13, color: UEColors.textMuted),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ),
-              const Divider(color: UEColors.border, height: 24),
-              SelectableText(
-                _safeExtractedText(doc),
-                style: UETypography.inter(
-                  fontSize: 13,
-                  color: UEColors.textSecondary,
-                  height: 1.5,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+            ),
     );
   }
 
@@ -579,6 +581,161 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+// PDF Reader with Syncfusion PdfViewer + page counter overlay
+// ════════════════════════════════════════════════════════════
+class _PdfReaderView extends StatefulWidget {
+  final String filePath;
+  const _PdfReaderView({required this.filePath});
+
+  @override
+  State<_PdfReaderView> createState() => _PdfReaderViewState();
+}
+
+class _PdfReaderViewState extends State<_PdfReaderView> {
+  final PdfViewerController _pdfController = PdfViewerController();
+  int _currentPage = 1;
+  int _totalPages = 0;
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void dispose() {
+    _pdfController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.broken_image_outlined, color: Colors.orange, size: 48),
+              const SizedBox(height: 12),
+              Text(
+                'Could not render PDF',
+                style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Stack(
+      children: [
+        // ── PDF Viewer ─────────────────────────────────────────
+        SfPdfViewer.file(
+          File(widget.filePath),
+          controller: _pdfController,
+          pageLayoutMode: PdfPageLayoutMode.continuous,
+          scrollDirection: PdfScrollDirection.vertical,
+          enableDoubleTapZooming: true,
+          onDocumentLoaded: (details) {
+            if (mounted) {
+              setState(() {
+                _totalPages = details.document.pages.count;
+                _isLoading = false;
+              });
+            }
+          },
+          onPageChanged: (details) {
+            if (mounted) setState(() => _currentPage = details.newPageNumber);
+          },
+          onDocumentLoadFailed: (details) {
+            if (mounted) setState(() {
+              _error = details.description;
+              _isLoading = false;
+            });
+          },
+        ),
+
+        // ── Loading indicator ──────────────────────────────────
+        if (_isLoading)
+          const Center(child: CircularProgressIndicator()),
+
+        // ── Page counter badge ─────────────────────────────────
+        if (!_isLoading && _totalPages > 0)
+          Positioned(
+            bottom: 16,
+            right: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: UEColors.surface.withValues(alpha: 0.92),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: UEColors.border, width: 0.5),
+              ),
+              child: Text(
+                '$_currentPage / $_totalPages',
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+
+        // ── Zoom controls ──────────────────────────────────────
+        if (!_isLoading)
+          Positioned(
+            bottom: 16,
+            left: 16,
+            child: Row(
+              children: [
+                _ZoomButton(
+                  icon: Icons.zoom_in,
+                  onTap: () => _pdfController.zoomLevel =
+                      (_pdfController.zoomLevel + 0.25).clamp(0.75, 3.0),
+                ),
+                const SizedBox(width: 8),
+                _ZoomButton(
+                  icon: Icons.zoom_out,
+                  onTap: () => _pdfController.zoomLevel =
+                      (_pdfController.zoomLevel - 0.25).clamp(0.75, 3.0),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ZoomButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _ZoomButton({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: UEColors.surface.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: UEColors.border, width: 0.5),
+        ),
+        child: Icon(icon, color: Colors.white70, size: 18),
       ),
     );
   }
