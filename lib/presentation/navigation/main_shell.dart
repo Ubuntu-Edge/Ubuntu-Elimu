@@ -31,10 +31,6 @@ class MainShell extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 70),
                 child: Column(
                   children: [
-                    _StatusBar(
-                      isOffline: sessionProvider.isOffline,
-                      onToggleOffline: sessionProvider.toggleOffline,
-                    ),
                     Expanded(
                       child: IndexedStack(
                         index: navProvider.selectedIndex,

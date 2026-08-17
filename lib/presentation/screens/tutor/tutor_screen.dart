@@ -1,23 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
 import '../../../models/chat_message.dart';
 import '../../../models/document.dart';
-import '../../../models/offline_model.dart';
 import '../../../providers/session_provider.dart';
 import '../../../providers/document_provider.dart';
 import '../../../providers/offline_model_provider.dart';
 import '../../../providers/settings_provider.dart';
-import 'widgets/doc_context_bar.dart';
-import 'widgets/model_lang_controls.dart';
 import 'widgets/chat_bubble.dart';
 import 'widgets/chat_input_bar.dart';
 import 'widgets/language_sheet.dart';
-
-// Maps the two Model pills to real catalog entries in default_offline_models.dart.
-const String _liteModelId = 'llama-3.2-1b-q8';
-const String _powerModelId = 'llama-3.2-3b-q4';
 
 class TutorScreen extends StatefulWidget {
   const TutorScreen({super.key});
@@ -29,8 +23,6 @@ class TutorScreen extends StatefulWidget {
 class _TutorScreenState extends State<TutorScreen> {
   final ScrollController _scrollController = ScrollController();
 
-  // Language has no backend persistence yet — kept as local UI state and
-  // passed straight into SessionProvider.sendMessage() per message.
   Language _language = Language.english;
   int _lastMessageCount = 0;
 
@@ -66,8 +58,8 @@ class _TutorScreenState extends State<TutorScreen> {
     if (docs.documents.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No documents yet — add one from the Library tab first.'),
-          backgroundColor: UEColors.bgCard,
+          content: Text('No documents yet — upload one from the Library tab first.'),
+          backgroundColor: UEColors.surface,
         ),
       );
       return;
@@ -75,7 +67,7 @@ class _TutorScreenState extends State<TutorScreen> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: UEColors.bgCard,
+      backgroundColor: UEColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -86,29 +78,63 @@ class _TutorScreenState extends State<TutorScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Study with a document', style: UETypography.h3),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Select Study Document',
+                    style: UETypography.spaceGrotesk(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: UEColors.textPrimary,
+                    ),
+                  ),
+                  if (session.activeDocumentId != null)
+                    TextButton.icon(
+                      onPressed: () {
+                        session.clearActiveDocument();
+                        Navigator.pop(sheetContext);
+                      },
+                      icon: const Icon(TablerIcons.x, size: 14, color: UEColors.pdfFg),
+                      label: Text(
+                        'Deselect',
+                        style: UETypography.inter(fontSize: 12, color: UEColors.pdfFg),
+                      ),
+                    ),
+                ],
+              ),
               const SizedBox(height: 12),
               ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 320),
                 child: ListView.separated(
                   shrinkWrap: true,
                   itemCount: docs.documents.length,
-                  separatorBuilder: (_, __) => const Divider(color: UEColors.border, height: 1),
+                  separatorBuilder: (_, __) => const Divider(color: UEColors.border, height: 0.5),
                   itemBuilder: (_, i) {
                     final doc = docs.documents[i];
+                    final isSelected = doc.id == session.activeDocumentId;
                     return ListTile(
-                      leading: Icon(_iconForType(doc.type), color: UEColors.textMuted),
-                      title: Text(doc.name, style: UETypography.bodyMd),
-                      subtitle: Text(
-                        doc.isProcessed ? 'Ready' : 'Still processing…',
-                        style: UETypography.caption,
+                      leading: Icon(
+                        _iconForType(doc.type),
+                        color: isSelected ? UEColors.accent : UEColors.textMuted,
                       ),
-                      onTap: doc.isProcessed
-                          ? () {
+                      title: Text(
+                        doc.name,
+                        style: UETypography.inter(
+                          fontSize: 13,
+                          color: isSelected ? UEColors.accent : UEColors.textPrimary,
+                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                        ),
+                      ),
+                      subtitle: Text(
+                        doc.isProcessed ? '${doc.sizeLabel} · Ready for AI' : 'Processing…',
+                        style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
+                      ),
+                      trailing: isSelected ? const Icon(TablerIcons.check, color: UEColors.accent, size: 18) : null,
+                      onTap: () {
                         session.setActiveDocument(doc.id, doc.name);
                         Navigator.pop(sheetContext);
-                      }
-                          : null,
+                      },
                     );
                   },
                 ),
@@ -123,50 +149,23 @@ class _TutorScreenState extends State<TutorScreen> {
   IconData _iconForType(DocType type) {
     switch (type) {
       case DocType.pdf:
-        return Icons.picture_as_pdf_rounded;
+        return TablerIcons.file_type_pdf;
       case DocType.pptx:
-        return Icons.slideshow_rounded;
+        return TablerIcons.file_type_ppt;
       case DocType.docx:
-        return Icons.description_rounded;
+        return TablerIcons.file_type_docx;
       default:
-        return Icons.insert_drive_file_rounded;
+        return TablerIcons.file_text;
     }
   }
 
   void _openCitation(CitationRef citation) {
-    // Real inference doesn't produce structured citations yet — tutorStream
-    // returns plain text. Wiring this properly means having the model emit
-    // a page/quote reference alongside its answer. Left as a follow-up.
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Opening ${citation.docName} p.${citation.page}'),
-        backgroundColor: UEColors.bgCard,
+        backgroundColor: UEColors.surface,
       ),
     );
-  }
-
-  void _handleModelChange(BuildContext context, OfflineModelProvider modelProvider, ModelMode mode) {
-    final targetId = mode == ModelMode.power ? _powerModelId : _liteModelId;
-    final target = modelProvider.models.where((m) => m.id == targetId).firstOrNull;
-
-    if (target == null) return;
-
-    if (!target.isDownloaded) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${target.name} isn\'t downloaded yet — grab it in Settings first.'),
-          backgroundColor: UEColors.bgCard,
-        ),
-      );
-      return;
-    }
-
-    modelProvider.setActiveModel(target);
-  }
-
-  ModelMode _modeForActiveModel(OfflineModel? active) {
-    if (active?.id == _powerModelId) return ModelMode.power;
-    return ModelMode.lite;
   }
 
   @override
@@ -191,48 +190,27 @@ class _TutorScreenState extends State<TutorScreen> {
         bottom: false,
         child: Column(
           children: [
-            _TopBar(onBack: () => Navigator.maybePop(context)),
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: UEColors.bgCard, width: 0.5)),
-              ),
-              child: Column(
-                children: [
-                  DocContextBar(
-                    activeDoc: activeDoc,
-                    onChangeTap: () => _showDocPicker(context, session, docs),
-                  ),
-                  const SizedBox(height: 10),
-                  ModelLangControls(
-                    selectedModel: _modeForActiveModel(modelProvider.activeModel),
-                    selectedLanguage: _language,
-                    socraticMode: settings.socraticMode,
-                    onModelChanged: (m) => _handleModelChange(context, modelProvider, m),
-                    onLanguageTap: () => LanguageSheet.show(
-                      context,
-                      current: _language,
-                      onSelected: (l) => setState(() => _language = l),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            // Research-style clean header bar (NO top back arrow)
+            _buildHeader(context, modelProvider),
+
             if (!modelProvider.hasActiveModel)
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 color: UEColors.pdfBg,
                 child: Text(
                   'No model loaded — go to Settings to download and activate one.',
                   style: UETypography.inter(fontSize: 11, color: UEColors.pdfFg),
                 ),
               ),
-            const _SessionDivider(),
+
+            // Document & Socratic Quick Bar
+            _buildControlBar(context, session, docs, activeDoc, settings),
+
             Expanded(
               child: ListView.separated(
                 controller: _scrollController,
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                 itemCount: session.chatMessages.length + (session.isGenerating ? 1 : 0),
                 separatorBuilder: (_, __) => const SizedBox(height: 16),
                 itemBuilder: (context, index) {
@@ -256,55 +234,177 @@ class _TutorScreenState extends State<TutorScreen> {
       ),
     );
   }
-}
 
-class _TopBar extends StatelessWidget {
-  final VoidCallback onBack;
+  Widget _buildHeader(BuildContext context, OfflineModelProvider modelProvider) {
+    final activeModelName = modelProvider.activeModel?.name ?? 'No Model Active';
 
-  const _TopBar({required this.onBack});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      decoration: const BoxDecoration(
+        color: UEColors.bgPrimary,
+        border: Border(bottom: BorderSide(color: UEColors.border, width: 0.5)),
+      ),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: onBack,
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: UEColors.accent.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
             child: const Icon(
-              Icons.arrow_back_rounded,
-              color: UEColors.textMuted,
-              size: 22,
+              TablerIcons.brain,
+              color: UEColors.accent,
+              size: 20,
             ),
           ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'AI Tutor',
+                style: UETypography.spaceGrotesk(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: UEColors.textPrimary,
+                ),
+              ),
+              Text(
+                activeModelName,
+                style: UETypography.inter(
+                  fontSize: 11,
+                  color: UEColors.textMuted,
+                ),
+              ),
+            ],
+          ),
           const Spacer(),
-          Text('AI Tutor', style: UETypography.h3),
-          const Spacer(),
-          const Icon(
-            Icons.more_horiz_rounded,
-            color: UEColors.textMuted,
-            size: 22,
+          // Language selection chip button
+          GestureDetector(
+            onTap: () => LanguageSheet.show(
+              context,
+              current: _language,
+              onSelected: (l) => setState(() => _language = l),
+            ),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: UEColors.surface,
+                border: Border.all(color: UEColors.border, width: 0.5),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(TablerIcons.language, size: 14, color: UEColors.textMuted),
+                  const SizedBox(width: 4),
+                  Text(
+                    _language.label,
+                    style: UETypography.inter(fontSize: 11, color: UEColors.textPrimary, fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
     );
   }
-}
 
-class _SessionDivider extends StatelessWidget {
-  const _SessionDivider();
+  Widget _buildControlBar(
+    BuildContext context,
+    SessionProvider session,
+    DocumentProvider docs,
+    Document? activeDoc,
+    SettingsProvider settings,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: const BoxDecoration(
+        color: UEColors.bgPrimary,
+        border: Border(bottom: BorderSide(color: UEColors.border, width: 0.5)),
+      ),
+      child: Row(
+        children: [
+          // Select Document Chip (like Research page Library Grounding chip)
+          Expanded(
+            child: GestureDetector(
+              onTap: () => _showDocPicker(context, session, docs),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: activeDoc != null ? UEColors.accent.withOpacity(0.12) : UEColors.surface,
+                  border: Border.all(
+                    color: activeDoc != null ? UEColors.accent : UEColors.border,
+                    width: 0.5,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      activeDoc != null ? _iconForType(activeDoc.type) : TablerIcons.file_plus,
+                      size: 14,
+                      color: activeDoc != null ? UEColors.accent : UEColors.textMuted,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        activeDoc != null ? activeDoc.name : 'Select Document to Study…',
+                        overflow: TextOverflow.ellipsis,
+                        style: UETypography.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: activeDoc != null ? UEColors.accent : UEColors.textMuted,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      TablerIcons.chevron_down,
+                      size: 14,
+                      color: activeDoc != null ? UEColors.accent : UEColors.textMuted,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
 
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Text(
-        'Session started · Today',
-        style: UETypography.caption.copyWith(
-          color: UEColors.textDim,
-          fontSize: 11,
-        ),
-        textAlign: TextAlign.center,
+          // Socratic Mode Pill Toggle
+          GestureDetector(
+            onTap: () => settings.toggleSocraticMode(!settings.socraticMode),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: settings.socraticMode ? UEColors.greenBg : UEColors.surface,
+                border: Border.all(
+                  color: settings.socraticMode ? UEColors.greenBorder : UEColors.border,
+                  width: 0.5,
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    TablerIcons.school,
+                    size: 14,
+                    color: settings.socraticMode ? UEColors.green : UEColors.textMuted,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    settings.socraticMode ? 'Socratic' : 'Direct',
+                    style: UETypography.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: settings.socraticMode ? UEColors.green : UEColors.textMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

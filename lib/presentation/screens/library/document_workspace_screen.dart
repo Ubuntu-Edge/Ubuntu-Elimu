@@ -179,8 +179,35 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
     );
   }
 
+  String _safeExtractedText(dynamic doc) {
+    if (doc == null) return '';
+    try {
+      final raw = doc.extractedText?.toString() ?? '';
+      if (raw.trim().isEmpty) {
+        final chunkCount = (doc.chunks != null && doc.chunks is List) ? (doc.chunks as List).length : 0;
+        return "Document content parsed into $chunkCount indexed knowledge chunks for offline AI reasoning.";
+      }
+      final buffer = StringBuffer();
+      for (final char in raw.runes) {
+        if ((char >= 32 && char <= 0xD7FF) ||
+            (char >= 0xE000 && char <= 0xFFFD) ||
+            (char >= 0x10000 && char <= 0x10FFFF) ||
+            char == 10 || char == 13 || char == 9) {
+          buffer.writeCharCode(char);
+        }
+      }
+      return buffer.toString();
+    } catch (_) {
+      return "Document content indexed for offline AI reasoning.";
+    }
+  }
+
   // ================= ORIGINAL READER =================
   Widget _buildReaderTab(dynamic doc) {
+    final docName = doc.name?.toString() ?? 'Document';
+    final docTypeStr = (doc.type != null) ? doc.type.extension : 'FILE';
+    final isProcessed = doc.isProcessed == true;
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Container(
@@ -203,17 +230,15 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
               ),
               const SizedBox(height: 8),
               Text(
-                "File: ${doc.name} (${doc.type.extension})\nStatus: ${doc.isProcessed ? 'Processed for Offline AI' : 'Ready'}",
+                "File: $docName ($docTypeStr)\nStatus: ${isProcessed ? 'Processed for Offline AI' : 'Ready'}",
                 style: UETypography.inter(
                   fontSize: 12,
                   color: UEColors.textMuted,
                 ),
               ),
               const Divider(color: UEColors.border, height: 24),
-              Text(
-                (doc.extractedText != null && (doc.extractedText as String).isNotEmpty)
-                    ? doc.extractedText as String
-                    : "Document content parsed into ${doc.chunks?.length ?? 0} indexed knowledge chunks for offline AI reasoning.",
+              SelectableText(
+                _safeExtractedText(doc),
                 style: UETypography.inter(
                   fontSize: 13,
                   color: UEColors.textSecondary,

@@ -107,6 +107,15 @@ class SessionProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  void clearActiveDocument() {
+    _activeDocumentId = null;
+    _activeSessionTitle = 'Socratic Tutor';
+    _activeSessionMeta = 'Offline · EN';
+    _rebuildDenizenSession();
+    _saveSession();
+    notifyListeners();
+  }
+
   // ─── Send Message ────────────────────────────────────────────
 
   Future<void> sendMessage(
