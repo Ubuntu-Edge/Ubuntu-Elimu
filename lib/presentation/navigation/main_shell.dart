@@ -18,7 +18,6 @@ class MainShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final navProvider = Provider.of<NavigationProvider>(context);
-    final sessionProvider = Provider.of<SessionProvider>(context);
 
     return Scaffold(
       backgroundColor: UEColors.bgPrimary,
@@ -29,20 +28,14 @@ class MainShell extends StatelessWidget {
             Positioned.fill(
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 70),
-                child: Column(
-                  children: [
-                    Expanded(
-                      child: IndexedStack(
-                        index: navProvider.selectedIndex,
-                        children: const [
-                          HomeScreen(),
-                          LibraryScreen(),
-                          TutorScreen(),
-                          ResearchScreen(),
-                          SettingsScreen(),
-                        ],
-                      ),
-                    ),
+                child: IndexedStack(
+                  index: navProvider.selectedIndex,
+                  children: const [
+                    HomeScreen(),
+                    LibraryScreen(),
+                    TutorScreen(),
+                    ResearchScreen(),
+                    SettingsScreen(),
                   ],
                 ),
               ),
@@ -54,111 +47,6 @@ class MainShell extends StatelessWidget {
               child: _BottomNav(
                 selectedIndex: navProvider.selectedIndex,
                 onTap: (index) => navProvider.setIndex(index),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusBar extends StatelessWidget {
-  final bool isOffline;
-  final VoidCallback onToggleOffline;
-
-  const _StatusBar({
-    required this.isOffline,
-    required this.onToggleOffline,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-      child: Center(
-        child: _OfflineBadge(
-          isOffline: isOffline,
-          onTap: onToggleOffline,
-        ),
-      ),
-    );
-  }
-}
-
-class _OfflineBadge extends StatefulWidget {
-  final bool isOffline;
-  final VoidCallback onTap;
-
-  const _OfflineBadge({
-    required this.isOffline,
-    required this.onTap,
-  });
-
-  @override
-  State<_OfflineBadge> createState() => _OfflineBadgeState();
-}
-
-class _OfflineBadgeState extends State<_OfflineBadge>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<double> _opacity;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
-    _opacity = Tween<double>(begin: 1, end: 0.4).animate(_ctrl);
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final activeBg = widget.isOffline ? UEColors.onlineBg : UEColors.bgElevated;
-    final activeBorder =
-        widget.isOffline ? UEColors.onlineBorder : UEColors.bgBorder;
-    final activeColor = widget.isOffline ? UEColors.online : UEColors.indigo;
-    final labelText =
-        widget.isOffline ? 'Offline · Ready' : 'Online · Syncing';
-
-    return GestureDetector(
-      onTap: widget.onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-        decoration: BoxDecoration(
-          color: activeBg,
-          border: Border.all(color: activeBorder, width: 0.5),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            FadeTransition(
-              opacity: _opacity,
-              child: Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: activeColor,
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-            const SizedBox(width: 5),
-            Text(
-              labelText,
-              style: UETypography.label.copyWith(
-                color: activeColor,
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
               ),
             ),
           ],
