@@ -139,6 +139,50 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
 
   @override
   Widget build(BuildContext context) {
+    try {
+      return _buildContent(context);
+    } catch (e, stack) {
+      debugPrint('DocumentWorkspaceScreen build error: $e\n$stack');
+      return Scaffold(
+        backgroundColor: UEColors.bg,
+        appBar: AppBar(
+          backgroundColor: UEColors.surface,
+          elevation: 0,
+          title: const Text('Document', style: TextStyle(color: Colors.white70, fontSize: 14)),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 48),
+                const SizedBox(height: 16),
+                const Text(
+                  'Could not open document',
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  e.toString(),
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: ElevatedButton.styleFrom(backgroundColor: UEColors.accent),
+                  child: const Text('Go Back'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  Widget _buildContent(BuildContext context) {
     final doc = widget.document;
 
     return Scaffold(

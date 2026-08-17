@@ -57,7 +57,15 @@ class DocumentProvider with ChangeNotifier {
     final stored = _documentBox.values.toList();
 
     _documents = stored
-        .map((e) => Document.fromMap(Map<String, dynamic>.from(e)))
+        .map((e) {
+          try {
+            return Document.fromMap(Map<String, dynamic>.from(e));
+          } catch (err) {
+            debugPrint('⚠️ Skipping corrupt document entry: $err');
+            return null;
+          }
+        })
+        .whereType<Document>()
         .toList();
 
     notifyListeners();

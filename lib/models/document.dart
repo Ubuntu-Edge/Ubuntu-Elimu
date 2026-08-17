@@ -126,18 +126,41 @@ class Document {
   }
 
   factory Document.fromMap(Map<String, dynamic> map) {
+    // Safe int parser — Hive can return num/double on some Android versions
+    int _safeInt(dynamic v, [int fallback = 0]) {
+      if (v == null) return fallback;
+      if (v is int) return v;
+      if (v is double) return v.toInt();
+      return int.tryParse(v.toString()) ?? fallback;
+    }
+
+    int? _safeIntNullable(dynamic v) {
+      if (v == null) return null;
+      if (v is int) return v;
+      if (v is double) return v.toInt();
+      return int.tryParse(v.toString());
+    }
+
+    DateTime _safeDate(dynamic v) {
+      try {
+        return DateTime.parse(v as String);
+      } catch (_) {
+        return DateTime.now();
+      }
+    }
+
     return Document(
-      id:            map['id'] as String,
-      name:          map['name'] as String,
-      type:          DocTypeExt.fromString(map['type'] as String),
-      sizeBytes:     map['sizeBytes'] as int,
-      addedAt:       DateTime.parse(map['addedAt'] as String),
-      pageCount:     map['pageCount'] as int?,
-      flashcardCount: map['flashcardCount'] as int?,
-      filePath:      map['filePath'] as String?,
-      extractedText: map['extractedText'] as String?,
-      chunks:        List<String>.from(map['chunks'] ?? []),
-      isProcessed:   map['isProcessed'] as bool? ?? false,
+      id:             (map['id'] ?? '').toString(),
+      name:           (map['name'] ?? 'Untitled').toString(),
+      type:           DocTypeExt.fromString((map['type'] ?? 'other').toString()),
+      sizeBytes:      _safeInt(map['sizeBytes']),
+      addedAt:        _safeDate(map['addedAt']),
+      pageCount:      _safeIntNullable(map['pageCount']),
+      flashcardCount: _safeIntNullable(map['flashcardCount']),
+      filePath:       map['filePath']?.toString(),
+      extractedText:  map['extractedText']?.toString(),
+      chunks:         List<String>.from((map['chunks'] ?? []).map((e) => e?.toString() ?? '')),
+      isProcessed:    map['isProcessed'] == true,
     );
   }
 }
