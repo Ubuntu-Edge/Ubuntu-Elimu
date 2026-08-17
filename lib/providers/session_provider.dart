@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:denizen_ai/denizen_ai.dart';
 import '../models/chat_message.dart';
-import '../services/offline_ai_service.dart';
 import 'document_provider.dart';
 
 class SessionProvider with ChangeNotifier {
+  final DenizenAI _denizen = DenizenAI();
+  DenizenSession? _activeSession;
+
   List<ChatMessage> _chatMessages = [];
   bool _isGenerating = false;
   bool _isOffline = true;
@@ -15,9 +18,6 @@ class SessionProvider with ChangeNotifier {
 
   late Box _sessionBox;
   bool _isInitialized = false;
-
-  // Conversation history for context window
-  final List<Map<String, String>> _history = [];
 
   List<ChatMessage> get chatMessages => _chatMessages;
   bool get isGenerating => _isGenerating;
@@ -31,8 +31,28 @@ class SessionProvider with ChangeNotifier {
   Future<void> init() async {
     _sessionBox = await Hive.openBox('tutor_sessions');
     _loadSession();
+    _rebuildDenizenSession();
     _isInitialized = true;
     notifyListeners();
+  }
+
+  void _rebuildDenizenSession({
+    bool socratic = true,
+    String language = 'English',
+    List<String>? contextChunks,
+  }) {
+    final context = (contextChunks != null && contextChunks.isNotEmpty)
+        ? '\n\n[DOCUMENT KNOWLEDGE BASE]:\n${contextChunks.take(3).join('\n---\n')}\n'
+        : '';
+
+    final systemPrompt = socratic
+        ? 'You are an expert Socratic tutor for Ubuntu Elimu. You guide students step-by-step through questions instead of directly giving answers. Encourage critical thinking, be patient, and respond in $language.$context'
+        : 'You are a direct, clear study assistant for Ubuntu Elimu. Answer questions plainly with worked examples where helpful. Be encouraging, concise, and respond in $language.$context';
+
+    _activeSession = _denizen.createSession(
+      systemPrompt: systemPrompt,
+      maxTokens: 2048,
+    );
   }
 
   void _loadSession() {
@@ -53,7 +73,7 @@ class SessionProvider with ChangeNotifier {
           id: 'welcome',
           role: MessageRole.ai,
           content:
-          'Hello! I\'m your Socratic tutor. Upload a document and ask me anything about it — I\'ll guide you through it with questions rather than just giving answers.',
+              "Hello! I'm your Socratic tutor powered by Denizen AI. Upload a document from your Library and ask me anything — I'll guide you through it step-by-step!",
           timestamp: DateTime.now(),
         ),
       ];
@@ -82,7 +102,7 @@ class SessionProvider with ChangeNotifier {
     _activeDocumentId = documentId;
     _activeSessionTitle = documentName;
     _activeSessionMeta = 'Offline · EN';
-    _history.clear(); // reset history when doc changes
+    _rebuildDenizenSession();
     _saveSession();
     notifyListeners();
   }
@@ -90,11 +110,11 @@ class SessionProvider with ChangeNotifier {
   // ─── Send Message ────────────────────────────────────────────
 
   Future<void> sendMessage(
-      String text, {
-        required DocumentProvider docProvider,
-        bool socratic = true,
-        String language = 'the same language the student uses',
-      }) async {
+    String text, {
+    required DocumentProvider docProvider,
+    bool socratic = true,
+    String language = 'the same language the student uses',
+  }) async {
     if (text.trim().isEmpty) return;
     if (!_isInitialized) await init();
 
@@ -106,7 +126,6 @@ class SessionProvider with ChangeNotifier {
       timestamp: DateTime.now(),
     );
     _chatMessages.add(userMsg);
-    _history.add({'role': 'user', 'content': text});
     _isGenerating = true;
     notifyListeners();
 
@@ -122,49 +141,45 @@ class SessionProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      // Get relevant chunks if a document is selected
-      List<String> chunks = [];
-      if (_activeDocumentId != null) {
-        chunks = docProvider.getRelevantChunks(_activeDocumentId!, text);
-      }
-
       // Check model is loaded
-      if (!OfflineAIService.instance.isModelLoaded) {
+      if (!_denizen.isModelLoaded) {
         _updateLastMessage(
-          'No model loaded. Please go to Settings and download a model first.',
+          'No model loaded. Please go to Settings to download and activate a model first.',
         );
         _isGenerating = false;
         notifyListeners();
         return;
       }
 
-      // Stream response
-      String accumulated = '';
-      await for (final token in OfflineAIService.instance.tutorStream(
-        userMessage: text,
-        contextChunks: chunks,
-        history: _history,
+      // Get relevant chunks if a document is selected
+      List<String> chunks = [];
+      if (_activeDocumentId != null) {
+        chunks = docProvider.getRelevantChunks(_activeDocumentId!, text);
+      }
+
+      // Ensure session is configured with current Socratic/Language/Chunk settings
+      _rebuildDenizenSession(
         socratic: socratic,
         language: language,
-      )) {
-        accumulated += token;
-        _updateLastMessage(accumulated);
-      }
+        contextChunks: chunks,
+      );
 
-      // Save AI response to history
-      _history.add({'role': 'assistant', 'content': accumulated});
+      // Stream response via DenizenSession
+      final stream = _activeSession!.streamChat(text);
+      final buffer = StringBuffer();
 
-      // Keep history to last 10 turns to stay within context window
-      if (_history.length > 10) {
-        _history.removeRange(0, _history.length - 10);
+      await for (final token in stream) {
+        buffer.write(token);
+        _updateLastMessage(buffer.toString());
       }
     } catch (e) {
-      _updateLastMessage('Sorry, something went wrong: $e');
+      debugPrint('❌ Tutor streaming error: $e');
+      _updateLastMessage('Sorry, an error occurred during inference: $e');
+    } finally {
+      _isGenerating = false;
+      _saveSession();
+      notifyListeners();
     }
-
-    _isGenerating = false;
-    _saveSession();
-    notifyListeners();
   }
 
   void _updateLastMessage(String content) {
@@ -179,23 +194,21 @@ class SessionProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // ─── Status ───────────────────────────────────────────────────
+  // ─── Status & Management ─────────────────────────────────────
 
   void toggleOffline() {
     _isOffline = !_isOffline;
     notifyListeners();
   }
 
-  // ─── Clear ───────────────────────────────────────────────────
-
   void clearChat() {
-    _history.clear();
+    _rebuildDenizenSession();
     _chatMessages = [
       ChatMessage(
         id: 'welcome',
         role: MessageRole.ai,
         content:
-        'Session reset. Socratic tutor is ready. What would you like to explore?',
+            'Session reset. Socratic tutor is ready. What would you like to explore?',
         timestamp: DateTime.now(),
       ),
     ];

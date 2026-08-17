@@ -2,30 +2,24 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:io';
-import 'package:path_provider/path_provider.dart';
 import 'dart:async';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:denizen_ai/denizen_ai.dart';
 
-import '../models/offline_model.dart';
-import '../models/offline_context_params.dart';
-import '../models/default_offline_models.dart';
-import '../services/model_download_service.dart';
-import '../services/offline_ai_service.dart';
-
-/// Provider for managing offline AI models (GGUF models for llama.cpp)
+/// Provider for managing offline AI models using the Denizen AI Model Manager.
 class OfflineModelProvider extends ChangeNotifier {
+  final DenizenAI _denizen = DenizenAI();
   List<OfflineModel> _models = [];
   OfflineModel? _activeModel;
   bool _isContextLoading = false;
-  bool _isInferencing = false;
-  bool _isStreaming = false;
+  final bool _isInferencing = false;
+  final bool _isStreaming = false;
   String? _error;
 
-  OfflineContextParams _contextParams = const OfflineContextParams();
+  final OfflineContextParams _contextParams = const OfflineContextParams();
 
   static const String _modelsKey = 'offline_models';
   static const String _activeModelKey = 'active_offline_model_id';
-  static const String _contextParamsKey = 'offline_context_params';
 
   // Getters
   List<OfflineModel> get models => _models;
@@ -48,26 +42,26 @@ class OfflineModelProvider extends ChangeNotifier {
     return true;
   }
 
-  /// Initialize - load models from storage
+  /// Initialize - load models from storage and auto-detect downloaded models
   Future<void> initialize() async {
     try {
-      debugPrint('🚀 Initializing OfflineModelProvider...');
+      debugPrint('🚀 Initializing OfflineModelProvider with Denizen AI...');
       final prefs = await SharedPreferences.getInstance();
 
       // Load models from storage or defaults
       final modelsJson = prefs.getStringList(_modelsKey) ?? [];
       if (modelsJson.isEmpty) {
         _models = DefaultOfflineModels.getEducationModels();
-        debugPrint('✅ Loaded default models');
+        debugPrint('✅ Loaded default education models');
       } else {
         _models = modelsJson.map((json) => OfflineModel.fromJson(jsonDecode(json))).toList();
         debugPrint('✅ Loaded ${_models.length} models from storage');
       }
 
-      // Auto-detect downloaded models from disk
+      // Auto-detect downloaded models from Denizen AI engine
       await _autoDetectDownloadedModels();
 
-      // Load active model
+      // Load active model if previously saved
       final activeModelId = prefs.getString(_activeModelKey);
       if (activeModelId != null) {
         final model = _models.where((m) => m.id == activeModelId).firstOrNull;
@@ -84,7 +78,7 @@ class OfflineModelProvider extends ChangeNotifier {
     }
   }
 
-  /// Set active model (will be loaded for inference)
+  /// Set active model (will be loaded into Denizen AI native inference engine)
   Future<void> setActiveModel(OfflineModel model) async {
     _error = null;
 
@@ -102,20 +96,17 @@ class OfflineModelProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final modelPath = await getModelFullPath(model);
-      if (modelPath != null) {
-        await _requestModelLoadingPermissions();
+      await _requestModelLoadingPermissions();
 
-        final loaded = await OfflineAIService.instance.loadModel(
-          modelPath: modelPath,
-          model: model,
-        );
+      final loaded = await _denizen.models.loadModel(
+        model,
+        contextSize: model.contextSize,
+      );
 
-        if (!loaded) {
-          _error = 'Failed to load model into memory.';
-        } else {
-          debugPrint('✅ Model loaded: ${model.name}');
-        }
+      if (!loaded) {
+        _error = 'Failed to load model into Denizen AI engine.';
+      } else {
+        debugPrint('✅ Model loaded successfully into Denizen AI engine: ${model.name}');
       }
     } catch (e) {
       _error = 'Error loading model: $e';
@@ -125,42 +116,49 @@ class OfflineModelProvider extends ChangeNotifier {
     }
   }
 
-  /// Download a model
+  /// Download a model via Denizen AI Model Manager
   Future<void> downloadModel(OfflineModel model) async {
     _error = null;
 
-    final service = ModelDownloadService.instance;
-    final downloadStream = service.downloadModel(
-      url: model.downloadUrl ?? '',
-      modelId: model.id,
-      fileName: model.filename,
-      author: model.author,
-    );
+    try {
+      final service = ModelDownloadService.instance;
+      final downloadStream = service.downloadModel(
+        url: model.downloadUrl ?? '',
+        modelId: model.id,
+        fileName: model.filename ?? '${model.id}.gguf',
+        author: model.author,
+      );
 
-    downloadStream.listen(
-          (progress) async {
-        if (progress.error != null) {
-          _error = progress.error;
-          _updateModelProgress(model.id, 0, false);
-        } else if (progress.isCompleted) {
-          _updateModelProgress(model.id, 1.0, true, path: progress.filePath);
-          await _saveModels();
-          debugPrint('✅ Download complete: ${model.name}');
-        } else {
-          _updateModelProgress(model.id, progress.progress, false);
-        }
-      },
-      onError: (e) {
-        _error = 'Download error: $e';
-        notifyListeners();
-      },
-    );
+      downloadStream.listen(
+        (progress) async {
+          if (progress.error != null) {
+            _error = progress.error;
+            _updateModelProgress(model.id, 0.0, false);
+          } else if (progress.isCompleted) {
+            _updateModelProgress(model.id, 1.0, true, path: progress.filePath);
+            await _saveModels();
+            debugPrint('✅ Download complete: ${model.name}');
+          } else {
+            // Convert percentage (0-100) to fraction (0.0 - 1.0)
+            final fraction = (progress.progress / 100.0).clamp(0.0, 1.0);
+            _updateModelProgress(model.id, fraction, false);
+          }
+        },
+        onError: (e) {
+          _error = 'Download error: $e';
+          notifyListeners();
+        },
+      );
+    } catch (e) {
+      _error = 'Failed to initiate download: $e';
+      notifyListeners();
+    }
   }
 
   /// Cancel an in-progress download
   void cancelDownload(String modelId) {
     ModelDownloadService.instance.cancelDownload(modelId);
-    _updateModelProgress(modelId, 0, false);
+    _updateModelProgress(modelId, 0.0, false);
   }
 
   void _updateModelProgress(String id, double progress, bool downloaded, {String? path}) {
@@ -180,25 +178,18 @@ class OfflineModelProvider extends ChangeNotifier {
       return model.localPath;
     }
 
-    final storageDir = await _getModelStorageDirectory();
+    final storageDir = await ModelDownloadService.instance.getModelStorageDirectory();
     final path = '${storageDir.path}/models/${model.author}/${model.filename}';
     if (await File(path).exists()) return path;
     return null;
   }
 
-  Future<Directory> _getModelStorageDirectory() async {
-    if (Platform.isAndroid) {
-      final dir = await getExternalStorageDirectory();
-      if (dir != null) return dir;
-    }
-    return await getApplicationDocumentsDirectory();
-  }
-
   Future<void> _autoDetectDownloadedModels() async {
     bool changed = false;
     for (int i = 0; i < _models.length; i++) {
+      final isDownloaded = await _denizen.models.isDownloaded(_models[i].id);
       final path = await getModelFullPath(_models[i]);
-      if (path != null && !_models[i].isDownloaded) {
+      if ((isDownloaded || path != null) && !_models[i].isDownloaded) {
         _models[i] = _models[i].copyWith(
           isDownloaded: true,
           downloadProgress: 1.0,
@@ -217,18 +208,15 @@ class OfflineModelProvider extends ChangeNotifier {
   }
 
   Future<void> deleteModel(OfflineModel model) async {
-    final path = await getModelFullPath(model);
-    if (path != null) {
-      await ModelDownloadService.instance.deleteModel(path);
-      _updateModelProgress(model.id, 0, false, path: null);
+    await _denizen.models.deleteModel(model.id);
+    _updateModelProgress(model.id, 0.0, false, path: null);
 
-      if (_activeModel?.id == model.id) {
-        _activeModel = null;
-        await OfflineAIService.instance.unloadModel();
-      }
-
-      await _saveModels();
+    if (_activeModel?.id == model.id) {
+      _activeModel = null;
+      await _denizen.engine.unloadModel();
     }
+
+    await _saveModels();
   }
 
   /// Total disk space used by downloaded models, in bytes
@@ -237,7 +225,7 @@ class OfflineModelProvider extends ChangeNotifier {
   }
 
   Future<void> clearActiveModel() async {
-    await OfflineAIService.instance.unloadModel();
+    await _denizen.engine.unloadModel();
     _activeModel = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_activeModelKey);

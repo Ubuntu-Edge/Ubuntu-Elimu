@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
-
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
+import '../../../services/offline_ai_service.dart';
 
 class DocumentWorkspaceScreen extends StatefulWidget {
   final dynamic document;
@@ -22,6 +22,15 @@ class DocumentWorkspaceScreen extends StatefulWidget {
 class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+
+  bool _isGeneratingSummary = false;
+  Map<String, dynamic>? _generatedSummary;
+
+  bool _isGeneratingPlan = false;
+  Map<String, dynamic>? _generatedPlan;
+
+  bool _isGeneratingFlashcards = false;
+  List<Map<String, dynamic>>? _generatedFlashcards;
 
   @override
   void initState() {
@@ -49,6 +58,83 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  List<String> get _docChunks {
+    final doc = widget.document;
+    if (doc.chunks != null && (doc.chunks as List).isNotEmpty) {
+      return List<String>.from(doc.chunks);
+    }
+    if (doc.extractedText != null && (doc.extractedText as String).isNotEmpty) {
+      return [doc.extractedText as String];
+    }
+    return [doc.name ?? 'Document'];
+  }
+
+  Future<void> _generateSummary() async {
+    if (!OfflineAIService.instance.isModelLoaded) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No model loaded. Please activate one in Settings.')),
+      );
+      return;
+    }
+    setState(() => _isGeneratingSummary = true);
+    try {
+      final res = await OfflineAIService.instance.summarizeChunks(_docChunks);
+      if (mounted) setState(() => _generatedSummary = res);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to generate summary: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isGeneratingSummary = false);
+    }
+  }
+
+  Future<void> _generatePlan() async {
+    if (!OfflineAIService.instance.isModelLoaded) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No model loaded. Please activate one in Settings.')),
+      );
+      return;
+    }
+    setState(() => _isGeneratingPlan = true);
+    try {
+      final res = await OfflineAIService.instance.generateStudyPlan(_docChunks, days: 3);
+      if (mounted) setState(() => _generatedPlan = res);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to generate study plan: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isGeneratingPlan = false);
+    }
+  }
+
+  Future<void> _generateFlashcards() async {
+    if (!OfflineAIService.instance.isModelLoaded) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No model loaded. Please activate one in Settings.')),
+      );
+      return;
+    }
+    setState(() => _isGeneratingFlashcards = true);
+    try {
+      final res = await OfflineAIService.instance.generateFlashcards(_docChunks, count: 6);
+      if (mounted) setState(() => _generatedFlashcards = res);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to generate flashcards: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isGeneratingFlashcards = false);
+    }
   }
 
   @override
@@ -94,7 +180,7 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
   }
 
   // ================= ORIGINAL READER =================
-  Widget _buildReaderTab(doc) {
+  Widget _buildReaderTab(dynamic doc) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Container(
@@ -103,13 +189,38 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
           color: UEColors.surface,
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Text(
-          "📄 Original Document Viewer Placeholder\n\n"
-          "Here you will render PDF/DOCX content using a file viewer.\n\n"
-          "File: ${doc.name}",
-          style: UETypography.inter(
-            fontSize: 13,
-            color: UEColors.textPrimary,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "📄 Document Reader",
+                style: UETypography.spaceGrotesk(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: UEColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "File: ${doc.name} (${doc.type?.name?.toUpperCase() ?? 'DOC'})\nStatus: ${doc.isProcessed ? 'Processed for Offline AI' : 'Ready'}",
+                style: UETypography.inter(
+                  fontSize: 12,
+                  color: UEColors.textMuted,
+                ),
+              ),
+              const Divider(color: UEColors.border, height: 24),
+              Text(
+                (doc.extractedText != null && (doc.extractedText as String).isNotEmpty)
+                    ? doc.extractedText as String
+                    : "Document content parsed into ${doc.chunks?.length ?? 0} indexed knowledge chunks for offline AI reasoning.",
+                style: UETypography.inter(
+                  fontSize: 13,
+                  color: UEColors.textSecondary,
+                  height: 1.5,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -117,109 +228,209 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
   }
 
   // ================= AI SUMMARY =================
-  Widget _buildSummaryTab(doc) {
+  Widget _buildSummaryTab(dynamic doc) {
+    if (_isGeneratingSummary) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 12),
+            Text('Generating offline summary with Denizen AI...', style: TextStyle(color: Colors.white70)),
+          ],
+        ),
+      );
+    }
+
+    final summary = _generatedSummary;
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _sectionTitle("📘 Structured Notes"),
-        _card("""
-• Machine Learning is a method of teaching computers to learn patterns from data  
-• It improves automatically through experience  
-• Used in prediction, classification, and recommendation systems  
-        """),
-
-        _sectionTitle("🧠 Key Concepts"),
-        _card("""
-• Supervised Learning  
-• Unsupervised Learning  
-• Reinforcement Learning  
-        """),
-
-        _sectionTitle("🎯 Exam Focus"),
-        _card("""
-• Difference between supervised vs unsupervised learning  
-• Real-world applications  
-• Basic model workflow  
-        """),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('AI SUMMARY', style: UETypography.label),
+            ElevatedButton.icon(
+              onPressed: _generateSummary,
+              icon: const Icon(TablerIcons.sparkles, size: 14),
+              label: Text(summary == null ? 'Generate with AI' : 'Regenerate', style: const TextStyle(fontSize: 11)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: UEColors.accent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (summary != null) ...[
+          _sectionTitle("📘 ${summary['title'] ?? 'Overview'}"),
+          _card(summary['summary']?.toString() ?? ''),
+          if (summary['key_concepts'] is List) ...[
+            _sectionTitle("🧠 Key Concepts"),
+            _card((summary['key_concepts'] as List).map((e) => "• $e").join('\n')),
+          ],
+          if (summary['exam_focus'] is List) ...[
+            _sectionTitle("🎯 Exam Focus"),
+            _card((summary['exam_focus'] as List).map((e) => "• $e").join('\n')),
+          ],
+          if (summary['notes'] is List) ...[
+            _sectionTitle("📝 Detailed Notes"),
+            _card((summary['notes'] as List).map((e) => "• $e").join('\n')),
+          ],
+        ] else ...[
+          _sectionTitle("📘 Structured Notes"),
+          _card("• ${doc.name} key concepts parsed.\n• Click 'Generate with AI' to run offline model synthesis."),
+          _sectionTitle("🧠 Key Concepts"),
+          _card("• Offline LLM Reasoning\n• Vector Retrieval Grounding"),
+          _sectionTitle("🎯 Exam Focus"),
+          _card("• Core formulas and definitions\n• Worked problem patterns"),
+        ],
       ],
     );
   }
 
   // ================= STUDY PLAN =================
-  Widget _buildStudyPlanTab(doc) {
+  Widget _buildStudyPlanTab(dynamic doc) {
+    if (_isGeneratingPlan) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 12),
+            Text('Generating personalized study plan...', style: TextStyle(color: Colors.white70)),
+          ],
+        ),
+      );
+    }
+
+    final plan = _generatedPlan;
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _sectionTitle("📅 3-Day Study Plan"),
-
-        _planCard("Day 1", "Introduction + Core Concepts", "30–45 min"),
-        _planCard("Day 2", "Deep Dive Topics", "45–60 min"),
-        _planCard("Day 3", "Revision + Practice Questions", "60 min"),
-
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('STUDY PLAN', style: UETypography.label),
+            ElevatedButton.icon(
+              onPressed: _generatePlan,
+              icon: const Icon(TablerIcons.calendar, size: 14),
+              label: Text(plan == null ? 'Generate Plan' : 'Regenerate', style: const TextStyle(fontSize: 11)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: UEColors.accent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 12),
-
-        _sectionTitle("⚡ Tips"),
-        _card("""
-• Study in short focused sessions  
-• Revise active recall questions  
-• Avoid passive reading only  
-        """),
+        if (plan != null && plan['plan'] is List) ...[
+          _sectionTitle("📅 ${(plan['plan'] as List).length}-Day Study Plan"),
+          ...(plan['plan'] as List).map((item) {
+            final day = "Day ${item['day'] ?? ''}";
+            final focus = "${item['focus'] ?? ''}\n${(item['tasks'] as List?)?.map((t) => '- $t').join('\n') ?? ''}";
+            final duration = "${item['duration_minutes'] ?? 45} min";
+            return _planCard(day, focus, duration);
+          }),
+          if (plan['tips'] is List) ...[
+            const SizedBox(height: 12),
+            _sectionTitle("⚡ Study Tips"),
+            _card((plan['tips'] as List).map((t) => "• $t").join('\n')),
+          ],
+        ] else ...[
+          _sectionTitle("📅 3-Day Study Plan"),
+          _planCard("Day 1", "Introduction + Core Concepts", "30–45 min"),
+          _planCard("Day 2", "Deep Dive Topics", "45–60 min"),
+          _planCard("Day 3", "Revision + Practice Questions", "60 min"),
+          const SizedBox(height: 12),
+          _sectionTitle("⚡ Tips"),
+          _card("• Study in short focused sessions\n• Revise active recall questions\n• Avoid passive reading only"),
+        ],
       ],
     );
   }
 
   // ================= FLASHCARDS =================
-  Widget _buildFlashcardsTab(doc) {
-    final cards = [
+  Widget _buildFlashcardsTab(dynamic doc) {
+    if (_isGeneratingFlashcards) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 12),
+            Text('Extracting flashcards with Denizen AI...', style: TextStyle(color: Colors.white70)),
+          ],
+        ),
+      );
+    }
+
+    final cards = _generatedFlashcards ?? [
       {
-        "q": "What is Machine Learning?",
-        "a": "A method where computers learn patterns from data."
+        "q": "What is the primary topic of ${doc.name}?",
+        "a": "The key concepts extracted from this document."
       },
       {
-        "q": "What is supervised learning?",
-        "a": "Learning using labeled data."
-      },
-      {
-        "q": "Give one application of ML",
-        "a": "Recommendation systems (e.g., Netflix, YouTube)"
+        "q": "How does offline AI help study this material?",
+        "a": "It enables instant local questioning without internet or data cost."
       },
     ];
 
-    return ListView.builder(
+    return ListView(
       padding: const EdgeInsets.all(16),
-      itemCount: cards.length,
-      itemBuilder: (context, index) {
-        final card = cards[index];
-
-        return Card(
-          color: UEColors.surface,
-          margin: const EdgeInsets.only(bottom: 12),
-          child: ExpansionTile(
-            iconColor: UEColors.accent,
-            collapsedIconColor: UEColors.textMuted,
-            title: Text(
-              card["q"]!,
-              style: UETypography.inter(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: UEColors.textPrimary,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('FLASHCARDS', style: UETypography.label),
+            ElevatedButton.icon(
+              onPressed: _generateFlashcards,
+              icon: const Icon(TablerIcons.cards, size: 14),
+              label: Text(_generatedFlashcards == null ? 'Generate Flashcards' : 'Regenerate', style: const TextStyle(fontSize: 11)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: UEColors.accent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               ),
             ),
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(
-                  card["a"]!,
-                  style: UETypography.inter(
-                    fontSize: 13,
-                    color: UEColors.textMuted,
-                  ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ...cards.map((card) {
+          return Card(
+            color: UEColors.surface,
+            margin: const EdgeInsets.only(bottom: 12),
+            child: ExpansionTile(
+              iconColor: UEColors.accent,
+              collapsedIconColor: UEColors.textMuted,
+              title: Text(
+                card["q"]?.toString() ?? '',
+                style: UETypography.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: UEColors.textPrimary,
                 ),
-              )
-            ],
-          ),
-        );
-      },
+              ),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    card["a"]?.toString() ?? '',
+                    style: UETypography.inter(
+                      fontSize: 13,
+                      color: UEColors.textMuted,
+                    ),
+                  ),
+                )
+              ],
+            ),
+          );
+        }),
+      ],
     );
   }
 
@@ -267,26 +478,29 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                day,
-                style: UETypography.inter(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: UEColors.textPrimary,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  day,
+                  style: UETypography.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: UEColors.textPrimary,
+                  ),
                 ),
-              ),
-              Text(
-                topic,
-                style: UETypography.inter(
-                  fontSize: 12,
-                  color: UEColors.textMuted,
+                Text(
+                  topic,
+                  style: UETypography.inter(
+                    fontSize: 12,
+                    color: UEColors.textMuted,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
+          const SizedBox(width: 8),
           Text(
             time,
             style: UETypography.inter(

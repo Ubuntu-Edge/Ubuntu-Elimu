@@ -123,12 +123,12 @@ class SettingsScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${model.author} · ${model.sizeMB.toStringAsFixed(0)} MB · ${model.quantization}',
+                      '${model.author} · ${model.sizeMB.toStringAsFixed(0)} MB · ${model.quantization ?? "Q4_K_M"}',
                       style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      model.description,
+                      model.description ?? 'Optimized on-device AI model for offline educational tutoring.',
                       style: UETypography.inter(fontSize: 11, color: UEColors.textSecondary, height: 1.4),
                     ),
                   ],

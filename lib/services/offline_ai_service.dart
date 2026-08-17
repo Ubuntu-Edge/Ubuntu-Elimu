@@ -2,32 +2,26 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:llama_flutter_android/llama_flutter_android.dart' as llama;
-import 'package:collection/collection.dart';
-import '../models/offline_model.dart';
-import '../models/offline_context_params.dart';
+import 'package:denizen_ai/denizen_ai.dart';
 
+/// Educational AI Service powered by the on-device Denizen AI Engine.
+/// Provides high-level educational inference workflows (Socratic tutoring,
+/// structured summarization, flashcard generation, study plans, research reports, and exam grading).
 class OfflineAIService {
   static final OfflineAIService _instance = OfflineAIService._internal();
   static OfflineAIService get instance => _instance;
   OfflineAIService._internal();
 
-  llama.LlamaController? _controller;
-  bool _isModelLoaded = false;
-  bool get isModelLoaded => _isModelLoaded;
+  final DenizenAI _denizen = DenizenAI();
 
-  String? _loadedModelPath;
-  OfflineModel? _loadedModel;
-  bool _stopRequested = false;
+  bool get isModelLoaded => _denizen.isModelLoaded;
+  OfflineModel? get loadedModel => _denizen.engine.loadedModel;
+  String? get loadedModelPath => _denizen.engine.loadedModelPath;
 
-  // ─── Model Lifecycle ────────────────────────────────────────
+  // ─── Lifecycle ───────────────────────────────────────────────
 
   Future<void> initialize() async {
-    if (!Platform.isAndroid) {
-      debugPrint('⚠️ OfflineAIService: Android only. Skipping init.');
-      return;
-    }
-    debugPrint('✅ OfflineAIService initialized');
+    await _denizen.engine.initialize();
   }
 
   Future<bool> loadModel({
@@ -35,113 +29,38 @@ class OfflineAIService {
     required OfflineModel model,
     dynamic contextParams,
   }) async {
-    if (!Platform.isAndroid) {
-      debugPrint('⚠️ loadModel: Android only.');
-      return false;
-    }
-
-    try {
-      debugPrint('🔄 Loading model: $modelPath');
-
-      final file = File(modelPath);
-      if (!await file.exists()) {
-        debugPrint('❌ Model file not found: $modelPath');
-        return false;
-      }
-
-      if (_isModelLoaded) await unloadModel();
-
-      final params = contextParams is OfflineContextParams
-          ? contextParams
-          : const OfflineContextParams();
-
-      _controller = llama.LlamaController();
-      await _controller!.loadModel(
-        modelPath: modelPath,
-        threads: params.nThreads,
-        contextSize: params.nCtx,
-        gpuLayers: params.nGpuLayers > 0 ? params.nGpuLayers : null,
-      );
-
-      _isModelLoaded = true;
-      _loadedModelPath = modelPath;
-      _loadedModel = model;
-
-      debugPrint('✅ Model loaded: ${model.name}');
-      return true;
-    } catch (e, stack) {
-      debugPrint('❌ Failed to load model: $e\n$stack');
-      _isModelLoaded = false;
-      _loadedModelPath = null;
-      _loadedModel = null;
-      _controller = null;
-      return false;
-    }
+    return _denizen.engine.loadModel(
+      modelPath: modelPath,
+      model: model,
+      contextParams: contextParams,
+    );
   }
 
   Future<void> unloadModel() async {
-    try {
-      if (_isModelLoaded && _controller != null) {
-        await _controller!.dispose();
-        debugPrint('✅ Model unloaded');
-      }
-    } catch (e) {
-      debugPrint('⚠️ Unload error: $e');
-    } finally {
-      _isModelLoaded = false;
-      _loadedModelPath = null;
-      _loadedModel = null;
-      _controller = null;
-    }
+    await _denizen.engine.unloadModel();
   }
 
-  // ─── Core Generation (streaming) ────────────────────────────
+  // ─── Generation Primitives ───────────────────────────────────
 
   Stream<String> generateResponseStream({
     required String prompt,
     required String systemPrompt,
     int maxTokens = 512,
-    double temperature = 0.7,
+    double temperature = 0.2,
     double topP = 0.9,
     int topK = 40,
     double repeatPenalty = 1.1,
-  }) async* {
-    if (!_isModelLoaded || _controller == null) {
-      yield 'Error: No model loaded.';
-      return;
-    }
-
-    _stopRequested = false;
-
-    try {
-      final messages = [
-        llama.ChatMessage(role: 'system', content: systemPrompt),
-        llama.ChatMessage(role: 'user', content: prompt),
-      ];
-
-      final stream = _controller!.generateChat(
-        messages: messages,
-        maxTokens: maxTokens,
-        temperature: temperature,
-        topP: topP,
-        topK: topK,
-        repeatPenalty: repeatPenalty,
-      );
-
-      await for (final token in stream) {
-        if (_stopRequested) {
-          await _controller!.stop();
-          break;
-        }
-        yield token;
-      }
-    } catch (e) {
-      debugPrint('❌ Stream error: $e');
-      yield '\n\nError: $e';
-    }
+  }) {
+    return _denizen.engine.generateResponseStream(
+      prompt: prompt,
+      systemPrompt: systemPrompt,
+      maxTokens: maxTokens,
+      temperature: temperature,
+      topP: topP,
+      topK: topK,
+      repeatPenalty: repeatPenalty,
+    );
   }
-
-  // ─── Core Generation (non-streaming) ────────────────────────
 
   Future<String> generateResponse({
     required String prompt,
@@ -152,8 +71,7 @@ class OfflineAIService {
     int topK = 40,
     double repeatPenalty = 1.1,
   }) async {
-    final buffer = StringBuffer();
-    await for (final token in generateResponseStream(
+    return _denizen.engine.generateResponse(
       prompt: prompt,
       systemPrompt: systemPrompt,
       maxTokens: maxTokens,
@@ -161,13 +79,10 @@ class OfflineAIService {
       topP: topP,
       topK: topK,
       repeatPenalty: repeatPenalty,
-    )) {
-      buffer.write(token);
-    }
-    return buffer.toString().trim();
+    );
   }
 
-  // ─── JSON Generation (with retry) ───────────────────────────
+  // ─── JSON Generation (Structured Output) ─────────────────────
 
   Future<Map<String, dynamic>?> generateJson({
     required String prompt,
@@ -181,20 +96,18 @@ class OfflineAIService {
           prompt: prompt,
           systemPrompt: systemPrompt,
           maxTokens: maxTokens,
-          temperature: 0.3,
+          temperature: 0.2,
         );
 
         final cleaned = _extractJson(raw);
         if (cleaned != null) {
           return jsonDecode(cleaned) as Map<String, dynamic>;
         }
-
         debugPrint('⚠️ JSON parse failed attempt $attempt — retrying');
       } catch (e) {
         debugPrint('⚠️ JSON generation error attempt $attempt: $e');
       }
     }
-
     debugPrint('❌ JSON generation failed after $maxRetries retries');
     return null;
   }
@@ -212,8 +125,9 @@ class OfflineAIService {
     return cleaned.substring(start, end + 1);
   }
 
-  // ─── Education Feature Methods ───────────────────────────────
+  // ─── Educational Workflows ───────────────────────────────────
 
+  /// Summarize study chunks into structured JSON notes
   Future<Map<String, dynamic>?> summarizeChunks(List<String> chunks) async {
     final context = chunks.join('\n\n---\n\n');
 
@@ -239,6 +153,7 @@ $context
     );
   }
 
+  /// Generate flashcards from document material
   Future<List<Map<String, dynamic>>?> generateFlashcards(
     List<String> chunks, {
     int count = 8,
@@ -271,6 +186,7 @@ $context
     return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
+  /// Generate a multi-day study plan
   Future<Map<String, dynamic>?> generateStudyPlan(
     List<String> chunks, {
     int days = 3,
@@ -302,6 +218,7 @@ $context
     );
   }
 
+  /// Stream Socratic tutoring response with conversation context
   Stream<String> tutorStream({
     required String userMessage,
     required List<String> contextChunks,
@@ -341,6 +258,7 @@ ${historyText.isNotEmpty ? "Previous conversation:\n$historyText\n\n" : ""}Stude
     );
   }
 
+  /// Grade an exam answer against ground truth
   Future<Map<String, dynamic>?> gradeAnswer({
     required String question,
     required String correctAnswer,
@@ -369,6 +287,7 @@ Return:
     );
   }
 
+  /// Generate a deep research report
   Future<String> generateReport({
     required String topic,
     required String depth,
@@ -376,7 +295,6 @@ Return:
     required List<String> contextChunks,
   }) async {
     final context = contextChunks.join('\n\n---\n\n');
-
     final depthGuidance = _getDepthGuidance(depth);
     final lengthGuidance = _getLengthGuidance(length);
 
@@ -442,26 +360,21 @@ Structure your report with clear sections including an introduction, main findin
   }
 
   Future<void> stopGeneration() async {
-    _stopRequested = true;
-    if (_controller != null) await _controller!.stop();
+    await _denizen.engine.stopGeneration();
   }
 
   Future<void> dispose() async {
-    await stopGeneration();
-    await unloadModel();
+    await _denizen.engine.dispose();
   }
 
-  bool get isAvailable => Platform.isAndroid && _isModelLoaded;
+  bool get isAvailable => Platform.isAndroid && _denizen.isModelLoaded;
 
   Map<String, dynamic>? getModelInfo() {
-    if (!_isModelLoaded || _loadedModel == null) return null;
+    if (!_denizen.isModelLoaded || loadedModel == null) return null;
     return {
-      'name': _loadedModel!.name,
-      'path': _loadedModelPath,
+      'name': loadedModel!.name,
+      'path': loadedModelPath,
       'status': 'loaded',
     };
   }
-
-  OfflineModel? get loadedModel => _loadedModel;
-  String? get loadedModelPath => _loadedModelPath;
 }

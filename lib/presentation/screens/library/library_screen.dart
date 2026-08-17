@@ -6,7 +6,6 @@ import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
 import '../../../providers/document_provider.dart';
-import '../../../models/document.dart';
 import 'widgets/document_card.dart';
 
 // NEW: AI workspace screen (you will implement next)
@@ -305,14 +304,6 @@ class LibraryScreen extends StatelessWidget {
       'Advanced Astrophysics presentation.pptx',
       'Kiswahili Grammar guide.pdf',
       'Microeconomics lecture slides.pptx'
-    ];
-
-    final docTypes = [
-      DocType.pdf,
-      DocType.docx,
-      DocType.pptx,
-      DocType.pdf,
-      DocType.pptx
     ];
 
     final idx = random.nextInt(names.length);

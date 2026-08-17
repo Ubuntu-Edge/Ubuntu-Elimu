@@ -74,7 +74,6 @@ class _StatusBar extends StatelessWidget {
   final VoidCallback onToggleOffline;
 
   const _StatusBar({
-    super.key,
     required this.isOffline,
     required this.onToggleOffline,
   });

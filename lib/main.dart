@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:denizen_ai/denizen_ai.dart' hide OfflineAIService;
 import 'presentation/navigation/main_shell.dart';
 import 'providers/navigation_provider.dart';
 import 'providers/session_provider.dart';
@@ -14,11 +15,20 @@ void main() async {
   // 1. Ensure plugin services are native-bound
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 2. Initialize low-level local storage engines
+  // 2. Configure Denizen AI SDK
+  DenizenAI.configure(
+    edgeConfig: const UbuntuEdgeConfig(
+      apiKey: 'ue-ubuntu-elimu-local',
+      enableCloudFallback: false,
+      enableOtaModelUpdates: false,
+    ),
+  );
+
+  // 3. Initialize low-level local storage engines
   await Hive.initFlutter();
   await SharedPreferences.getInstance();
 
-  // 3. Instantiate and initialize your critical offline providers
+  // 4. Instantiate and initialize critical offline providers
   final docProvider = DocumentProvider();
   await docProvider.init();
 
