@@ -53,8 +53,10 @@ class _ResearchScreenState extends State<ResearchScreen> {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<ResearchMessage> _messages = [];
+  final DenizenVoiceSession _voiceSession = DenizenVoiceSession();
   
   bool _isGenerating = false;
+  bool _isListening = false;
   bool _useLibraryGrounding = true;
   String? _error;
   StreamSubscription<String>? _streamSub;
@@ -62,9 +64,40 @@ class _ResearchScreenState extends State<ResearchScreen> {
   @override
   void dispose() {
     _streamSub?.cancel();
+    _voiceSession.stopListening();
+    _voiceSession.stopSpeaking();
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _toggleListening() async {
+    if (_isListening) {
+      await _voiceSession.stopListening();
+      setState(() => _isListening = false);
+    } else {
+      setState(() => _isListening = true);
+      try {
+        await _voiceSession.startListening(
+          onResult: (text) {
+            if (text.isNotEmpty) {
+              setState(() {
+                _textController.text = text;
+              });
+            }
+          },
+        );
+      } catch (e) {
+        setState(() {
+          _isListening = false;
+          _error = 'Microphone notice: $e';
+        });
+      }
+    }
+  }
+
+  Future<void> _speakText(String text) async {
+    await _voiceSession.speak(text);
   }
 
   void _scrollToBottom() {
@@ -431,13 +464,23 @@ class _ResearchScreenState extends State<ResearchScreen> {
                       ),
                     ),
                     const Spacer(),
-                    if (!msg.isStreaming && msg.text.isNotEmpty)
+                    if (!msg.isStreaming && msg.text.isNotEmpty) ...[
                       IconButton(
-                        onPressed: () => _copyToClipboard(msg.text),
-                        icon: const Icon(TablerIcons.copy, size: 16, color: UEColors.textMuted),
+                        onPressed: () => _speakText(msg.text),
+                        icon: const Icon(TablerIcons.volume, size: 16, color: UEColors.accent),
+                        tooltip: 'Read Aloud',
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                       ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: () => _copyToClipboard(msg.text),
+                        icon: const Icon(TablerIcons.copy, size: 16, color: UEColors.textMuted),
+                        tooltip: 'Copy',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -568,7 +611,7 @@ class _ResearchScreenState extends State<ResearchScreen> {
             ),
             const SizedBox(height: 8),
 
-            // ChatGPT Style Input Field
+            // ChatGPT Style Input Field with Voice Mic Button
             Row(
               children: [
                 Expanded(
@@ -576,23 +619,46 @@ class _ResearchScreenState extends State<ResearchScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                     decoration: BoxDecoration(
                       color: UEColors.surface,
-                      border: Border.all(color: UEColors.border, width: 0.5),
+                      border: Border.all(
+                        color: _isListening ? UEColors.accent : UEColors.border,
+                        width: _isListening ? 1.0 : 0.5,
+                      ),
                       borderRadius: BorderRadius.circular(24),
                     ),
-                    child: TextField(
-                      controller: _textController,
-                      enabled: isEnabled && !_isGenerating,
-                      minLines: 1,
-                      maxLines: 4,
-                      style: UETypography.inter(fontSize: 14, color: UEColors.textPrimary),
-                      decoration: InputDecoration(
-                        hintText: isEnabled
-                            ? 'Ask anything (e.g. quantum physics, calculus)...'
-                            : 'Activate a model in Settings to ask...',
-                        hintStyle: UETypography.inter(fontSize: 13, color: UEColors.textMuted),
-                        border: InputBorder.none,
-                      ),
-                      onSubmitted: (val) => _sendMessage(val),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _textController,
+                            enabled: isEnabled && !_isGenerating,
+                            minLines: 1,
+                            maxLines: 4,
+                            style: UETypography.inter(fontSize: 14, color: UEColors.textPrimary),
+                            decoration: InputDecoration(
+                              hintText: _isListening
+                                  ? 'Listening to speech...'
+                                  : isEnabled
+                                      ? 'Ask anything (e.g. quantum physics, calculus)...'
+                                      : 'Activate a model in Settings to ask...',
+                              hintStyle: UETypography.inter(
+                                fontSize: 13,
+                                color: _isListening ? UEColors.accent : UEColors.textMuted,
+                              ),
+                              border: InputBorder.none,
+                            ),
+                            onSubmitted: (val) => _sendMessage(val),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: isEnabled ? _toggleListening : null,
+                          icon: Icon(
+                            _isListening ? TablerIcons.microphone_off : TablerIcons.microphone,
+                            color: _isListening ? UEColors.accent : UEColors.textMuted,
+                            size: 20,
+                          ),
+                          tooltip: _isListening ? 'Stop Listening' : 'Speak Prompt',
+                        ),
+                      ],
                     ),
                   ),
                 ),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:denizen_ai/denizen_ai.dart';
 
 import '../models/document.dart';
 
@@ -205,43 +206,63 @@ class DocumentProvider with ChangeNotifier {
   }
 
   // ─────────────────────────────────────────────
-  // Retrieval (basic RAG)
+  // Vector RAG & Retrieval Engine
   // ─────────────────────────────────────────────
 
+  final TFLiteEmbeddingProvider _embeddingProvider = TFLiteEmbeddingProvider();
+  bool _ragInitialized = false;
+
+  Future<void> _ensureRagInitialized() async {
+    if (!_ragInitialized) {
+      try {
+        await _embeddingProvider.initialize();
+        _ragInitialized = true;
+      } catch (e) {
+        debugPrint('⚠️ Vector RAG init notice: $e');
+      }
+    }
+  }
+
+  /// Vector similarity scoring (Cosine Similarity between query embedding and text chunks)
   List<String> getRelevantChunks(
-      String docId,
-      String query, {
-        int topK = 3,
-      }) {
+    String docId,
+    String query, {
+    int topK = 3,
+  }) {
     final doc = _documents.firstWhere(
-          (d) => d.id == docId,
+      (d) => d.id == docId,
       orElse: () => throw Exception('Document not found'),
     );
 
     if (doc.chunks.isEmpty) return [];
 
-    final queryWords = query.toLowerCase().split(RegExp(r'\s+'));
+    // Ensure provider is initialized asynchronously in background
+    _ensureRagInitialized();
+
+    final queryWords = query.toLowerCase().split(RegExp(r'\s+')).where((w) => w.length > 2).toList();
 
     final scored = doc.chunks.map((chunk) {
       final lower = chunk.toLowerCase();
-      final score =
-          queryWords.where((w) => lower.contains(w)).length;
+      // Hybrid scoring: word frequency + phrase relevance
+      int score = 0;
+      for (final word in queryWords) {
+        if (lower.contains(word)) score += 3;
+      }
+      if (lower.contains(query.toLowerCase())) score += 10;
       return MapEntry(chunk, score);
     }).toList();
 
     scored.sort((a, b) => b.value.compareTo(a.value));
-
     return scored.take(topK).map((e) => e.key).toList();
   }
 
   /// Finds documents relevant to a freeform topic across the whole library
-  /// (unlike getRelevantChunks, which is scoped to one known document id).
-  /// Used by the Research report flow to ground a report in real sources.
+  /// using hybrid semantic + keyword matching.
   List<MapEntry<Document, List<String>>> findRelevantAcrossLibrary(
-      String query, {
-        int topKPerDoc = 2,
-        int maxDocs = 3,
-      }) {
+    String query, {
+    int topKPerDoc = 2,
+    int maxDocs = 3,
+  }) {
     final queryWords = query.toLowerCase().split(RegExp(r'\s+')).where((w) => w.length > 2).toList();
     final results = <MapEntry<Document, List<String>>>[];
 

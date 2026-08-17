@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:denizen_ai/denizen_ai.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/typography.dart';
 
@@ -18,7 +19,9 @@ class ChatInputBar extends StatefulWidget {
 
 class _ChatInputBarState extends State<ChatInputBar> {
   final TextEditingController _controller = TextEditingController();
+  final DenizenVoiceSession _voiceSession = DenizenVoiceSession();
   bool _hasText = false;
+  bool _isListening = false;
 
   @override
   void initState() {
@@ -31,13 +34,40 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   @override
   void dispose() {
+    _voiceSession.stopListening();
     _controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _toggleListening() async {
+    if (_isListening) {
+      await _voiceSession.stopListening();
+      setState(() => _isListening = false);
+    } else {
+      setState(() => _isListening = true);
+      try {
+        await _voiceSession.startListening(
+          onResult: (text) {
+            if (text.isNotEmpty) {
+              setState(() {
+                _controller.text = text;
+              });
+            }
+          },
+        );
+      } catch (e) {
+        setState(() => _isListening = false);
+      }
+    }
   }
 
   void _send() {
     final text = _controller.text.trim();
     if (text.isEmpty || widget.isTyping) return;
+    if (_isListening) {
+      _voiceSession.stopListening();
+      _isListening = false;
+    }
     _controller.clear();
     widget.onSend(text);
   }
@@ -51,7 +81,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
         16,
         MediaQuery.of(context).padding.bottom + 12,
       ),
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: UEColors.bgPrimary,
         border: Border(
           top: BorderSide(color: UEColors.bgCard, width: 0.5),
@@ -63,7 +93,11 @@ class _ChatInputBarState extends State<ChatInputBar> {
           color: UEColors.bgCard,
           borderRadius: BorderRadius.circular(24),
           border: Border.all(
-            color: _hasText ? UEColors.indigo.withOpacity(0.4) : UEColors.bgBorder,
+            color: _isListening
+                ? UEColors.accent
+                : _hasText
+                    ? UEColors.indigo.withOpacity(0.4)
+                    : UEColors.bgBorder,
             width: 0.5,
           ),
         ),
@@ -80,9 +114,9 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 style: UETypography.bodyMd.copyWith(fontSize: 14),
                 cursorColor: UEColors.indigo,
                 decoration: InputDecoration(
-                  hintText: 'Ask anything...',
+                  hintText: _isListening ? 'Listening to speech...' : 'Ask anything...',
                   hintStyle: UETypography.bodyMd.copyWith(
-                    color: UEColors.textDim,
+                    color: _isListening ? UEColors.accent : UEColors.textDim,
                     fontSize: 14,
                   ),
                   border: InputBorder.none,
@@ -91,7 +125,18 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 ),
               ),
             ),
-            const SizedBox(width: 10),
+            IconButton(
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: _toggleListening,
+              icon: Icon(
+                _isListening ? Icons.mic_off_rounded : Icons.mic_rounded,
+                size: 20,
+                color: _isListening ? UEColors.accent : UEColors.textDim,
+              ),
+              tooltip: _isListening ? 'Stop Listening' : 'Voice Input',
+            ),
+            const SizedBox(width: 8),
             AnimatedContainer(
               duration: const Duration(milliseconds: 180),
               width: 36,

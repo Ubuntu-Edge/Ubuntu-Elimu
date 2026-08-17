@@ -9,7 +9,6 @@ import '../../providers/session_provider.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/tutor/tutor_screen.dart';
 import '../screens/library/library_screen.dart';
-import '../screens/exam_prep/exam_prep_screen.dart';
 import '../screens/research/research_screen.dart';
 import '../screens/settings/settings_screen.dart';
 
