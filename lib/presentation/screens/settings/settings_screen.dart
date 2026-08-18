@@ -1,14 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
+import 'dart:io';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
 import '../../../models/offline_model.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../providers/offline_model_provider.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  int _availableRamMB = -1;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRamInfo();
+  }
+
+  Future<void> _loadRamInfo() async {
+    try {
+      if (Platform.isAndroid) {
+        final memInfo = await File('/proc/meminfo').readAsString();
+        final match = RegExp(r'MemAvailable:\s+(\d+)').firstMatch(memInfo);
+        if (match != null && mounted) {
+          setState(() => _availableRamMB = int.parse(match.group(1)!) ~/ 1024);
+        }
+      }
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,10 +53,14 @@ class SettingsScreen extends StatelessWidget {
             _buildErrorBanner(modelProvider.error!),
             const SizedBox(height: 10),
           ],
+          if (_availableRamMB > 0) ...[
+            _buildRamBar(_availableRamMB),
+            const SizedBox(height: 10),
+          ],
           ...modelProvider.models.map(
                 (model) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: _buildModelCard(context, modelProvider, model),
+              child: _buildModelCard(context, modelProvider, model, _availableRamMB),
             ),
           ),
           const SizedBox(height: 14),
@@ -82,10 +112,48 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildRamBar(int availableMB) {
+    final color = availableMB >= 700
+        ? UEColors.green
+        : availableMB >= 400
+            ? const Color(0xFFE6A817)
+            : UEColors.pdfFg;
+    final label = availableMB >= 700
+        ? 'Good'
+        : availableMB >= 400
+            ? 'Low'
+            : 'Critical';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        border: Border.all(color: color.withOpacity(0.3), width: 0.5),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(TablerIcons.cpu, size: 14, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Free device memory: ${availableMB} MB  ($label)',
+              style: UETypography.inter(fontSize: 11, color: color, fontWeight: FontWeight.w600),
+            ),
+          ),
+          GestureDetector(
+            onTap: _loadRamInfo,
+            child: Icon(TablerIcons.refresh, size: 13, color: color),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildModelCard(
       BuildContext context,
       OfflineModelProvider modelProvider,
       OfflineModel model,
+      int availableRamMB,
       ) {
     final isActive = (modelProvider.activeModel?.id == model.id) || (modelProvider.loadedModelId == model.id);
     final isDownloading = modelProvider.downloadingModelId == model.id && !model.isDownloaded && model.downloadProgress < 0.999;
@@ -95,7 +163,9 @@ class SettingsScreen extends StatelessWidget {
         !modelProvider.isContextLoading &&
         modelProvider.downloadingModelId == null &&
         (modelProvider.activeModel?.id == model.id || modelProvider.error!.contains(model.name));
-
+    // RAM fit check for this specific model
+    final requiredRamMB = (model.sizeMB * 2.5).ceil();
+    final hasEnoughRam = availableRamMB <= 0 || availableRamMB >= requiredRamMB;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -129,7 +199,7 @@ class SettingsScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${model.author} · ${model.sizeMB.toStringAsFixed(0)} MB · ${model.quantization ?? "Q4_K_M"}',
+                      '${model.author} · ${model.sizeMB.toStringAsFixed(0)} MB · ${model.quantization ?? "Q4_K_M"} · needs ~${requiredRamMB} MB RAM',
                       style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
                     ),
                     const SizedBox(height: 6),
@@ -292,23 +362,36 @@ class SettingsScreen extends StatelessWidget {
             ),
           ] else ...[
             GestureDetector(
-              onTap: () => modelProvider.downloadModel(model),
+              onTap: hasEnoughRam ? () => modelProvider.downloadModel(model) : null,
               child: Container(
-                height: 38,
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  color: UEColors.accent,
+                  color: hasEnoughRam ? UEColors.accent : const Color(0xFFE6A817).withOpacity(0.15),
+                  border: hasEnoughRam ? null : Border.all(color: const Color(0xFFE6A817), width: 0.5),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Center(
-                  child: Text(
-                    'Download (${model.sizeMB.toStringAsFixed(0)} MB)',
-                    style: UETypography.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Column(
+                  children: [
+                    Text(
+                      hasEnoughRam
+                          ? 'Download (${model.sizeMB.toStringAsFixed(0)} MB)'
+                          : '⚠  Low Memory — Download anyway?',
+                      style: UETypography.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: hasEnoughRam ? Colors.white : const Color(0xFFE6A817),
+                      ),
                     ),
-                  ),
+                    if (!hasEnoughRam) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Need ~${requiredRamMB} MB, have ${availableRamMB} MB free. Close other apps first.',
+                        style: UETypography.inter(fontSize: 10, color: const Color(0xFFE6A817)),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
