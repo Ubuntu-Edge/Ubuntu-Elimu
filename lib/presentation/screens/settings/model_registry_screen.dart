@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:denizen_ai/denizen_ai.dart';
 import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
 import 'package:provider/provider.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'dart:io';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
 import '../../../providers/offline_model_provider.dart';
@@ -55,6 +58,11 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
     });
 
     try {
+      if (Platform.isAndroid && await Permission.notification.isDenied) {
+        await Permission.notification.request();
+      }
+      await WakelockPlus.enable();
+
       await _denizen.models.load(
         model.id,
         onProgress: (progress) {
@@ -102,6 +110,10 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
           ),
         );
       }
+    } finally {
+      try {
+        await WakelockPlus.disable();
+      } catch (_) {}
     }
   }
 
