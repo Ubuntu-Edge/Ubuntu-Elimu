@@ -22,6 +22,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _loadRamInfo();
+    // Wire error callback so we can show a Snackbar with the real error
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = Provider.of<OfflineModelProvider>(context, listen: false);
+      provider.onLoadError = (modelName, message) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '❌ $modelName failed to load:\n$message',
+              style: const TextStyle(fontSize: 12),
+            ),
+            backgroundColor: const Color(0xFFB91C1C),
+            duration: const Duration(seconds: 8),
+            action: SnackBarAction(
+              label: 'Dismiss',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
+          ),
+        );
+      };
+    });
   }
 
   Future<void> _loadRamInfo() async {
@@ -158,11 +180,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final isActive = (modelProvider.activeModel?.id == model.id) || (modelProvider.loadedModelId == model.id);
     final isDownloading = modelProvider.downloadingModelId == model.id && !model.isDownloaded && model.downloadProgress < 0.999;
     final isLoadingIntoMemory = modelProvider.isContextLoading && modelProvider.downloadingModelId == model.id;
-    // Show provider error only on the card that last triggered it
+    // Show error banner on the card whose load last failed
     final hasError = modelProvider.error != null &&
         !modelProvider.isContextLoading &&
-        modelProvider.downloadingModelId == null &&
-        (modelProvider.activeModel?.id == model.id || modelProvider.error!.contains(model.name));
+        modelProvider.lastErrorModelId == model.id;
     // RAM fit check for this specific model
     final requiredRamMB = (model.sizeMB * 2.5).ceil();
     final hasEnoughRam = availableRamMB <= 0 || availableRamMB >= requiredRamMB;

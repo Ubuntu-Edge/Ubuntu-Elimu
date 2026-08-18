@@ -42,11 +42,14 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   String? _downloadingModelId;
+  String? _lastErrorModelId;
+  void Function(String modelName, String message)? onLoadError;
 
   // Getters
   List<OfflineModel> get models => _models;
   OfflineModel? get activeModel => _activeModel;
   String? get downloadingModelId => _downloadingModelId;
+  String? get lastErrorModelId => _lastErrorModelId;
   String? get loadedModelId => _denizen.engine.loadedModel?.id ?? _activeModel?.id;
   bool get isContextLoading => _isContextLoading;
   bool get isInferencing => _isInferencing;
@@ -231,12 +234,16 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
       await _saveModelsToPrefs();
       debugPrint('✅ Model loaded: ${model.name}');
     } catch (e) {
-      _error = 'Error loading model: $e';
+      final errMsg = e.toString().replaceFirst('Exception: ', '');
+      _error = errMsg;
+      _lastErrorModelId = model.id;
       final isAlreadyDownloaded = await _denizen.models.isDownloaded(model.id);
       if (!isAlreadyDownloaded) {
         _updateModelProgress(model.id, 0.0, false);
       }
-      debugPrint('❌ Error loading model: $e');
+      debugPrint('❌ Error loading model ${model.name}: $e');
+      // Fire callback so UI can show Snackbar
+      onLoadError?.call(model.name, errMsg);
     } finally {
       try {
         await WakelockPlus.disable();
