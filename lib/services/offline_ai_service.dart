@@ -60,13 +60,7 @@ class OfflineAIService {
       maxTokens: maxTokens,
     );
 
-    final stream = session.streamChat(
-      prompt,
-      temperature: temperature,
-      topP: topP,
-      topK: topK,
-      repeatPenalty: repeatPenalty,
-    );
+    final stream = session.streamChat(prompt);
 
     await for (final token in stream) {
       yield token;
@@ -91,13 +85,7 @@ class OfflineAIService {
       maxTokens: maxTokens,
     );
 
-    return await session.chat(
-      prompt,
-      temperature: temperature,
-      topP: topP,
-      topK: topK,
-      repeatPenalty: repeatPenalty,
-    );
+    return await session.chat(prompt);
   }
 
   // ─── JSON Generation (Structured Output) ─────────────────────

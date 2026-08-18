@@ -69,9 +69,10 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
       final selected = <String>[];
       int currentLength = 0;
       for (final chunk in doc.chunks) {
-        if (currentLength + chunk.length > 1800 && selected.isNotEmpty) break;
-        selected.add(chunk);
-        currentLength += chunk.length;
+        final chunkStr = chunk.toString();
+        if (currentLength + chunkStr.length > 1800 && selected.isNotEmpty) break;
+        selected.add(chunkStr);
+        currentLength += chunkStr.length;
       }
       return selected;
     }
