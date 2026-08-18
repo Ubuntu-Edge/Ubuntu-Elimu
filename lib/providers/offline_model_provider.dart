@@ -16,8 +16,6 @@ class OfflineModelProvider extends ChangeNotifier {
   final bool _isStreaming = false;
   String? _error;
 
-  final OfflineContextParams _contextParams = const OfflineContextParams();
-
   static const String _modelsKey = 'offline_models';
   static const String _activeModelKey = 'active_offline_model_id';
 
@@ -28,7 +26,6 @@ class OfflineModelProvider extends ChangeNotifier {
   bool get isInferencing => _isInferencing;
   bool get isStreaming => _isStreaming;
   String? get error => _error;
-  OfflineContextParams get contextParams => _contextParams;
   bool get hasActiveModel => _activeModel != null;
 
   /// Request necessary permissions for offline model loading
@@ -48,17 +45,42 @@ class OfflineModelProvider extends ChangeNotifier {
       debugPrint('🚀 Initializing OfflineModelProvider with Denizen AI...');
       final prefs = await SharedPreferences.getInstance();
 
-      // Load models from storage or defaults
+      final defaultModels = DefaultOfflineModels.getMedicalModels();
+
+      // Load models from storage
       final modelsJson = prefs.getStringList(_modelsKey) ?? [];
       if (modelsJson.isEmpty) {
-        _models = DefaultOfflineModels.getEducationModels();
-        debugPrint('✅ Loaded default education models');
+        _models = defaultModels;
       } else {
-        _models = modelsJson.map((json) => OfflineModel.fromJson(jsonDecode(json))).toList();
-        debugPrint('✅ Loaded ${_models.length} models from storage');
+        final storedModels = modelsJson.map((json) {
+          try {
+            return OfflineModel.fromJson(jsonDecode(json));
+          } catch (_) {
+            return null;
+          }
+        }).whereType<OfflineModel>().toList();
+
+        // Merge stored models with default models, replacing obsolete entries
+        final Map<String, OfflineModel> modelMap = {
+          for (final m in defaultModels) m.id: m,
+        };
+
+        for (final stored in storedModels) {
+          if (modelMap.containsKey(stored.id)) {
+            modelMap[stored.id] = modelMap[stored.id]!.copyWith(
+              isDownloaded: stored.isDownloaded,
+              downloadProgress: stored.downloadProgress,
+              localPath: stored.localPath,
+            );
+          } else if (stored.isDownloaded) {
+            modelMap[stored.id] = stored;
+          }
+        }
+
+        _models = modelMap.values.toList();
       }
 
-      // Auto-detect downloaded models from Denizen AI engine
+      // Auto-detect downloaded models from Denizen AI engine / storage
       await _autoDetectDownloadedModels();
 
       // Load active model if previously saved
@@ -73,24 +95,15 @@ class OfflineModelProvider extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       debugPrint('❌ OfflineModelProvider initialization failed: $e');
-      _models = DefaultOfflineModels.getEducationModels();
+      _models = DefaultOfflineModels.getMedicalModels();
       notifyListeners();
     }
   }
 
   /// Set active model (will be loaded into Denizen AI native inference engine)
   Future<void> setActiveModel(OfflineModel model) async {
+    if (_isContextLoading && _activeModel?.id == model.id) return; // Prevent concurrent re-entry for same model
     _error = null;
-
-    if (!model.isDownloaded) {
-      _error = 'Model must be downloaded first.';
-      notifyListeners();
-      return;
-    }
-
-    _activeModel = model;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_activeModelKey, model.id);
 
     _isContextLoading = true;
     notifyListeners();
@@ -98,18 +111,29 @@ class OfflineModelProvider extends ChangeNotifier {
     try {
       await _requestModelLoadingPermissions();
 
-      final loaded = await _denizen.models.loadModel(
-        model,
-        contextSize: model.contextSize,
+      // Cleanly unload any existing model from native C++ RAM first to prevent OOM crash
+      if (_denizen.isModelLoaded) {
+        await _denizen.engine.unloadModel();
+      }
+
+      await _denizen.models.load(
+        model.id,
+        onProgress: (progress) {
+          final fraction = progress.progress.clamp(0.0, 1.0);
+          _updateModelProgress(model.id, fraction, false);
+        },
       );
 
-      if (!loaded) {
-        _error = 'Failed to load model into Denizen AI engine.';
-      } else {
-        debugPrint('✅ Model loaded successfully into Denizen AI engine: ${model.name}');
-      }
+      _activeModel = model;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_activeModelKey, model.id);
+
+      _updateModelProgress(model.id, 1.0, true);
+      debugPrint('✅ Model loaded successfully into Denizen AI engine: ${model.name}');
     } catch (e) {
       _error = 'Error loading model: $e';
+      _updateModelProgress(model.id, 0.0, false);
+      debugPrint('❌ Error loading model: $e');
     } finally {
       _isContextLoading = false;
       notifyListeners();
@@ -118,47 +142,22 @@ class OfflineModelProvider extends ChangeNotifier {
 
   /// Download a model via Denizen AI Model Manager
   Future<void> downloadModel(OfflineModel model) async {
+    _isContextLoading = false;
     _error = null;
-
-    try {
-      final service = ModelDownloadService.instance;
-      final downloadStream = service.downloadModel(
-        url: model.downloadUrl ?? '',
-        modelId: model.id,
-        fileName: model.filename ?? '${model.id}.gguf',
-        author: model.author,
-      );
-
-      downloadStream.listen(
-        (progress) async {
-          if (progress.error != null) {
-            _error = progress.error;
-            _updateModelProgress(model.id, 0.0, false);
-          } else if (progress.isCompleted) {
-            _updateModelProgress(model.id, 1.0, true, path: progress.filePath);
-            await _saveModels();
-            debugPrint('✅ Download complete: ${model.name}');
-          } else {
-            // Convert percentage (0-100) to fraction (0.0 - 1.0)
-            final fraction = (progress.progress / 100.0).clamp(0.0, 1.0);
-            _updateModelProgress(model.id, fraction, false);
-          }
-        },
-        onError: (e) {
-          _error = 'Download error: $e';
-          notifyListeners();
-        },
-      );
-    } catch (e) {
-      _error = 'Failed to initiate download: $e';
-      notifyListeners();
-    }
+    await setActiveModel(model);
   }
 
   /// Cancel an in-progress download
   void cancelDownload(String modelId) {
-    ModelDownloadService.instance.cancelDownload(modelId);
+    try {
+      ModelDownloadService.instance.cancelDownload(modelId);
+    } catch (e) {
+      debugPrint('Notice on cancelDownload: $e');
+    }
+    _isContextLoading = false;
+    _error = null;
     _updateModelProgress(modelId, 0.0, false);
+    notifyListeners();
   }
 
   void _updateModelProgress(String id, double progress, bool downloaded, {String? path}) {

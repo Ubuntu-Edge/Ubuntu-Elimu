@@ -193,38 +193,40 @@ class SettingsScreen extends StatelessWidget {
                 Expanded(
                   child: isLoadingIntoMemory
                       ? Row(
-                    children: [
-                      const SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Loading into memory…',
-                        style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
-                      ),
-                    ],
-                  )
+                          children: [
+                            const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Loading into memory…',
+                              style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
+                            ),
+                          ],
+                        )
                       : GestureDetector(
-                    onTap: isActive ? null : () => modelProvider.setActiveModel(model),
-                    child: Container(
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: isActive ? UEColors.iconBg : UEColors.accent,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        isActive ? 'Currently in use' : 'Use this model',
-                        style: UETypography.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: isActive ? UEColors.textMuted : Colors.white,
+                          onTap: (isActive || modelProvider.isContextLoading)
+                              ? null
+                              : () => modelProvider.setActiveModel(model),
+                          child: Container(
+                            height: 34,
+                            decoration: BoxDecoration(
+                              color: isActive ? UEColors.iconBg : UEColors.accent,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              isActive ? 'Currently in use' : 'Use this model',
+                              style: UETypography.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: isActive ? UEColors.textMuted : Colors.white,
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                  ),
                 ),
                 const SizedBox(width: 10),
                 GestureDetector(
