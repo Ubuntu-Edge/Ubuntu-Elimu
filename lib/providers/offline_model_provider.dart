@@ -160,79 +160,28 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     try {
       await WakelockPlus.enable();
-
-      // ── RAM gate ──────────────────────────────────────────────────────────
-      // llama.cpp needs roughly 2.5× the GGUF file size in free RAM.
-      // If the device can't satisfy that, abort now with a clear message
-      // instead of hanging the spinner indefinitely.
-      final availableRamMB = await _getAvailableRamMB();
-      final requiredRamMB = (model.sizeMB * 2.5).ceil();
-      debugPrint('🧠 RAM check — available: ${availableRamMB}MB, required: ${requiredRamMB}MB');
-      if (availableRamMB > 0 && availableRamMB < requiredRamMB) {
-        throw Exception(
-          'Not enough free RAM to load ${model.name}.\n'
-          'Need ~${requiredRamMB} MB but only ${availableRamMB} MB is free.\n'
-          'Close other apps and try again.',
-        );
-      }
-      // ─────────────────────────────────────────────────────────────────────
+      await _requestModelLoadingPermissions();
 
       // Cleanly unload any existing model from native C++ RAM first to prevent OOM crash
       if (_denizen.isModelLoaded) {
         await _denizen.engine.unloadModel();
       }
 
-      // Fire models.load() without blocking — the SDK sometimes hangs its future
-      // even after successfully loading (platform channel quirk). We poll the engine
-      // directly and clear the spinner as soon as the model is confirmed live.
-      bool loadCompleted = false;
-      Object? loadError;
-
-      // ignore: unawaited_futures
-      _denizen.models.load(
+      await _denizen.models.load(
         model.id,
         onProgress: (progress) {
           final fraction = progress.progress.clamp(0.0, 1.0);
-          _updateModelProgress(model.id, fraction, fraction >= 0.999);
+          final isDownloaded = fraction >= 0.999;
+          _updateModelProgress(model.id, fraction, isDownloaded);
         },
-      ).then((_) {
-        loadCompleted = true;
-      }).catchError((e) {
-        loadError = e;
-        loadCompleted = true; // treat error as done so the poll loop exits
-      });
-
-      // Poll every 1 second for up to 3 minutes
-      const pollInterval = Duration(seconds: 1);
-      const maxWait = Duration(minutes: 3);
-      final deadline = DateTime.now().add(maxWait);
-
-      while (!loadCompleted) {
-        await Future.delayed(pollInterval);
-
-        // Engine confirms model is live — we're done regardless of SDK future
-        if (_denizen.engine.loadedModel?.id == model.id) {
-          debugPrint('✅ Engine confirms model live: ${model.name}');
-          loadCompleted = true;
-          break;
-        }
-
-        if (DateTime.now().isAfter(deadline)) {
-          debugPrint('⚠️ Load timed out after 3 minutes');
-          break;
-        }
-      }
-
-      if (loadError != null) {
-        throw loadError!;
-      }
+      );
 
       _activeModel = model;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_activeModelKey, model.id);
       _updateModelProgress(model.id, 1.0, true);
       await _saveModelsToPrefs();
-      debugPrint('✅ Model loaded: ${model.name}');
+      debugPrint('✅ Model loaded into Denizen engine: ${model.name}');
     } catch (e) {
       final errMsg = e.toString().replaceFirst('Exception: ', '');
       _error = errMsg;
@@ -242,7 +191,6 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
         _updateModelProgress(model.id, 0.0, false);
       }
       debugPrint('❌ Error loading model ${model.name}: $e');
-      // Fire callback so UI can show Snackbar
       onLoadError?.call(model.name, errMsg);
     } finally {
       try {

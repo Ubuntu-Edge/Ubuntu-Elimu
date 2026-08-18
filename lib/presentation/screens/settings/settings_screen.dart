@@ -75,10 +75,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildErrorBanner(modelProvider.error!),
             const SizedBox(height: 10),
           ],
-          if (_availableRamMB > 0) ...[
-            _buildRamBar(_availableRamMB),
-            const SizedBox(height: 10),
-          ],
+          _buildRamBar(_availableRamMB),
+          const SizedBox(height: 10),
           ...modelProvider.models.map(
                 (model) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
@@ -135,16 +133,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildRamBar(int availableMB) {
-    final color = availableMB >= 700
-        ? UEColors.green
-        : availableMB >= 400
-            ? const Color(0xFFE6A817)
-            : UEColors.pdfFg;
-    final label = availableMB >= 700
-        ? 'Good'
-        : availableMB >= 400
-            ? 'Low'
-            : 'Critical';
+    final hasRamReading = availableMB > 0;
+    final color = !hasRamReading
+        ? UEColors.accent
+        : availableMB >= 700
+            ? UEColors.green
+            : availableMB >= 400
+                ? const Color(0xFFE6A817)
+                : UEColors.pdfFg;
+    final text = hasRamReading
+        ? 'Free device memory: ${availableMB} MB (${availableMB >= 700 ? "Good" : availableMB >= 400 ? "Low" : "Critical"})'
+        : 'Engine Memory: Auto-Managed by On-Device AI Runtime';
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -158,7 +158,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Free device memory: ${availableMB} MB  ($label)',
+              text,
               style: UETypography.inter(fontSize: 11, color: color, fontWeight: FontWeight.w600),
             ),
           ),
