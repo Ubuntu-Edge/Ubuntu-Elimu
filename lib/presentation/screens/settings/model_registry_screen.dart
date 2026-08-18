@@ -73,7 +73,7 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
       if (mounted) {
         setState(() {
           _downloadingModelId = null;
-          _statusText = '✅ ${model.name} loaded into neural memory!';
+          _statusText = '✅ ${model.name} safely downloaded & ready! Tap "Load into Engine" to activate.';
         });
 
         // Sync provider so other screens know
@@ -82,8 +82,9 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✅ ${model.name} successfully activated for on-device AI!'),
+            content: Text('✅ ${model.name} safely downloaded & saved to storage!'),
             backgroundColor: UEColors.green,
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -292,12 +293,12 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
                                       child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                                     )
                                   : Icon(isDownloadedOnDisk ? TablerIcons.player_play : TablerIcons.download, size: 16),
-                              label: Text(
-                                isDownloadingThis
-                                    ? (isDownloadedOnDisk ? 'LOADING INTO RAM...' : 'DOWNLOADING & LOADING...')
-                                    : (isDownloadedOnDisk ? 'LOAD INTO ENGINE' : 'DOWNLOAD & LOAD ENGINE'),
-                                style: UETypography.inter(fontSize: 12, fontWeight: FontWeight.w600),
-                              ),
+                                label: Text(
+                                  isDownloadingThis
+                                      ? (isDownloadedOnDisk ? 'LOADING INTO RAM...' : 'DOWNLOADING MODEL...')
+                                      : (isDownloadedOnDisk ? 'LOAD INTO ENGINE' : 'DOWNLOAD MODEL (${model.sizeMB.toStringAsFixed(0)} MB)'),
+                                  style: UETypography.inter(fontSize: 12, fontWeight: FontWeight.w600),
+                                ),
                               onPressed: _downloadingModelId != null ? null : () => _downloadAndLoadModel(model),
                             ),
                           ),
