@@ -1,13 +1,15 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:denizen_ai/denizen_ai.dart';
 
 /// Provider for managing offline AI models using the Denizen AI Model Manager.
-class OfflineModelProvider extends ChangeNotifier {
+class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
   final DenizenAI _denizen = DenizenAI();
   List<OfflineModel> _models = [];
   OfflineModel? _activeModel;
@@ -18,6 +20,26 @@ class OfflineModelProvider extends ChangeNotifier {
 
   static const String _modelsKey = 'offline_models';
   static const String _activeModelKey = 'active_offline_model_id';
+
+  OfflineModelProvider() {
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (_isContextLoading) {
+        _isContextLoading = false;
+        notifyListeners();
+      }
+    }
+  }
 
   // Getters
   List<OfflineModel> get models => _models;
@@ -48,55 +70,28 @@ class OfflineModelProvider extends ChangeNotifier {
       final defaultModels = DefaultOfflineModels.getMedicalModels();
 
       // Load models from storage
-      final modelsJson = prefs.getStringList(_modelsKey) ?? [];
-      if (modelsJson.isEmpty) {
-        _models = defaultModels;
+      final storedModelsJson = prefs.getString(_modelsKey);
+      if (storedModelsJson != null) {
+        final List<dynamic> jsonList = jsonDecode(storedModelsJson);
+        _models = jsonList.map((j) => OfflineModel.fromJson(j)).toList();
       } else {
-        final storedModels = modelsJson.map((json) {
-          try {
-            return OfflineModel.fromJson(jsonDecode(json));
-          } catch (_) {
-            return null;
-          }
-        }).whereType<OfflineModel>().toList();
-
-        // Merge stored models with default models, replacing obsolete entries
-        final Map<String, OfflineModel> modelMap = {
-          for (final m in defaultModels) m.id: m,
-        };
-
-        for (final stored in storedModels) {
-          if (modelMap.containsKey(stored.id)) {
-            modelMap[stored.id] = modelMap[stored.id]!.copyWith(
-              isDownloaded: stored.isDownloaded,
-              downloadProgress: stored.downloadProgress,
-              localPath: stored.localPath,
-            );
-          } else if (stored.isDownloaded) {
-            modelMap[stored.id] = stored;
-          }
-        }
-
-        _models = modelMap.values.toList();
+        _models = defaultModels;
       }
 
-      // Auto-detect downloaded models from Denizen AI engine / storage
       await _autoDetectDownloadedModels();
 
-      // Load active model if previously saved
-      final activeModelId = prefs.getString(_activeModelKey);
-      if (activeModelId != null) {
-        final model = _models.where((m) => m.id == activeModelId).firstOrNull;
-        if (model != null && model.isDownloaded) {
-          await setActiveModel(model);
+      // Restore active model if recorded
+      final storedActiveId = prefs.getString(_activeModelKey);
+      if (storedActiveId != null) {
+        final activeIndex = _models.indexWhere((m) => m.id == storedActiveId);
+        if (activeIndex != -1 && _models[activeIndex].isDownloaded) {
+          _activeModel = _models[activeIndex];
         }
       }
 
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ OfflineModelProvider initialization failed: $e');
-      _models = DefaultOfflineModels.getMedicalModels();
-      notifyListeners();
+      debugPrint('❌ OfflineModelProvider initialization error: $e');
     }
   }
 
@@ -109,6 +104,7 @@ class OfflineModelProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      await WakelockPlus.enable();
       await _requestModelLoadingPermissions();
 
       // Cleanly unload any existing model from native C++ RAM first to prevent OOM crash
@@ -135,6 +131,9 @@ class OfflineModelProvider extends ChangeNotifier {
       _updateModelProgress(model.id, 0.0, false);
       debugPrint('❌ Error loading model: $e');
     } finally {
+      try {
+        await WakelockPlus.disable();
+      } catch (_) {}
       _isContextLoading = false;
       notifyListeners();
     }
