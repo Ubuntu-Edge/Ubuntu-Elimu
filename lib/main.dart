@@ -15,16 +15,7 @@ void main() async {
   // 1. Ensure plugin services are native-bound
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 2. Configure Denizen AI SDK
-  DenizenAI.configure(
-    edgeConfig: const UbuntuEdgeConfig(
-      apiKey: 'ue-ubuntu-elimu-local',
-      enableCloudFallback: false,
-      enableOtaModelUpdates: false,
-    ),
-  );
-
-  // 3. Initialize low-level local storage engines
+  // 2. Ensure Flutter binding and storage
   await Hive.initFlutter();
   await SharedPreferences.getInstance();
 

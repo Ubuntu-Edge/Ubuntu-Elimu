@@ -260,7 +260,7 @@ packages:
   denizen_ai:
     dependency: "direct main"
     description:
-      path: ".."
+      path: "../offline_ai_architecture"
       relative: true
     source: path
     version: "0.0.1"
@@ -578,7 +578,7 @@ packages:
   llama_flutter_android:
     dependency: transitive
     description:
-      path: "../packages/llama_flutter_android"
+      path: "../offline_ai_architecture/packages/llama_flutter_android"
       relative: true
     source: path
     version: "0.1.4"
@@ -1164,7 +1164,7 @@ packages:
     source: hosted
     version: "27.2.5"
   syncfusion_flutter_pdf:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: syncfusion_flutter_pdf
       sha256: da7fb9d156fafdce7099dc711c1a2dc522c48361188bd4be78520b22c99bbafd
