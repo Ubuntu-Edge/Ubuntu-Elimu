@@ -1,67 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
-import 'dart:io';
+import 'package:denizen_ai/denizen_ai.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
-import '../../../models/offline_model.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../providers/offline_model_provider.dart';
+import 'model_registry_screen.dart';
 
-class SettingsScreen extends StatefulWidget {
+class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
-  @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
-}
-
-class _SettingsScreenState extends State<SettingsScreen> {
-  int _availableRamMB = -1;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadRamInfo();
-    // Wire error callback so we can show a Snackbar with the real error
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+  void _openModelRegistry(BuildContext context) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ModelRegistryScreen()),
+    );
+    // Refresh model provider state upon return
+    if (context.mounted) {
       final provider = Provider.of<OfflineModelProvider>(context, listen: false);
-      provider.onLoadError = (modelName, message) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '❌ $modelName failed to load:\n$message',
-              style: const TextStyle(fontSize: 12),
-            ),
-            backgroundColor: const Color(0xFFB91C1C),
-            duration: const Duration(seconds: 8),
-            action: SnackBarAction(
-              label: 'Dismiss',
-              textColor: Colors.white,
-              onPressed: () {},
-            ),
-          ),
-        );
-      };
-    });
-  }
-
-  Future<void> _loadRamInfo() async {
-    try {
-      if (Platform.isAndroid) {
-        final memInfo = await File('/proc/meminfo').readAsString();
-        final match = RegExp(r'MemAvailable:\s+(\d+)').firstMatch(memInfo);
-        if (match != null && mounted) {
-          setState(() => _availableRamMB = int.parse(match.group(1)!) ~/ 1024);
-        }
-      }
-    } catch (_) {}
+      await provider.initialize();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final settings = Provider.of<SettingsProvider>(context);
     final modelProvider = Provider.of<OfflineModelProvider>(context);
+    final denizen = DenizenAI();
+    final isRealModelActive = denizen.isModelLoaded;
+    final activeModelName = modelProvider.activeModel?.name ?? denizen.engine.loadedModel?.name ?? 'No Model Loaded';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -69,28 +37,128 @@ class _SettingsScreenState extends State<SettingsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
-          _buildSectionTitle('OFFLINE MODELS'),
+          _buildSectionTitle('OFFLINE AI ENGINE'),
           const SizedBox(height: 10),
-          if (modelProvider.error != null) ...[
-            _buildErrorBanner(modelProvider.error!),
-            const SizedBox(height: 10),
-          ],
-          _buildRamBar(_availableRamMB),
-          const SizedBox(height: 10),
-          ...modelProvider.models.map(
-                (model) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _buildModelCard(context, modelProvider, model, _availableRamMB),
+
+          // Engine Status Card
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: isRealModelActive ? UEColors.greenBg : UEColors.surface,
+              border: Border.all(
+                color: isRealModelActive ? UEColors.greenBorder : UEColors.border,
+                width: isRealModelActive ? 1.5 : 0.5,
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      isRealModelActive ? TablerIcons.brain : TablerIcons.cloud_download,
+                      color: isRealModelActive ? UEColors.green : UEColors.accent,
+                      size: 26,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                isRealModelActive ? 'LIVE NEURAL ENGINE ACTIVE' : 'NO MODEL IN MEMORY',
+                                style: UETypography.spaceGrotesk(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: isRealModelActive ? UEColors.green : UEColors.textPrimary,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            isRealModelActive
+                                ? 'Loaded Model: $activeModelName\n100% on-device AI inference is active for your Tutor & Library.'
+                                : 'Select and load a compact GGUF model in the registry to activate offline AI.',
+                            style: UETypography.inter(
+                              fontSize: 12,
+                              color: isRealModelActive ? UEColors.textPrimary : UEColors.textSecondary,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => _openModelRegistry(context),
+                        child: Container(
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: isRealModelActive ? UEColors.green : UEColors.accent,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          alignment: Alignment.center,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(TablerIcons.database, size: 16, color: Colors.white),
+                              const SizedBox(width: 8),
+                              Text(
+                                isRealModelActive ? 'MANAGE MODELS' : 'OPEN MODEL REGISTRY',
+                                style: UETypography.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (isRealModelActive) ...[
+                      const SizedBox(width: 10),
+                      GestureDetector(
+                        onTap: () => modelProvider.clearActiveModel(),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: UEColors.pdfFg, width: 0.5),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            'Unload',
+                            style: UETypography.inter(fontSize: 12, color: UEColors.pdfFg, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 14),
+
+          const SizedBox(height: 24),
           _buildSectionTitle('PREFERENCES'),
           const SizedBox(height: 10),
           _buildPreferenceSwitches(context, settings),
           const SizedBox(height: 24),
           _buildSectionTitle('LOCAL SYSTEM INFO'),
           const SizedBox(height: 10),
-          _buildSystemInfoCard(context, modelProvider),
+          _buildSystemInfoCard(context, modelProvider, activeModelName),
           const SizedBox(height: 24),
         ],
       ),
@@ -105,319 +173,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         fontWeight: FontWeight.w600,
         color: UEColors.textMuted,
         letterSpacing: 1.1,
-      ),
-    );
-  }
-
-  Widget _buildErrorBanner(String message) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: UEColors.pdfBg,
-        border: Border.all(color: UEColors.pdfFg.withOpacity(0.4), width: 0.5),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          Icon(TablerIcons.alert_circle, color: UEColors.pdfFg, size: 16),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              message,
-              style: UETypography.inter(fontSize: 11, color: UEColors.pdfFg),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRamBar(int availableMB) {
-    final hasRamReading = availableMB > 0;
-    final color = !hasRamReading
-        ? UEColors.accent
-        : availableMB >= 700
-            ? UEColors.green
-            : availableMB >= 400
-                ? const Color(0xFFE6A817)
-                : UEColors.pdfFg;
-    final text = hasRamReading
-        ? 'Free device memory: ${availableMB} MB (${availableMB >= 700 ? "Good" : availableMB >= 400 ? "Low" : "Critical"})'
-        : 'Engine Memory: Auto-Managed by On-Device AI Runtime';
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        border: Border.all(color: color.withOpacity(0.3), width: 0.5),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          Icon(TablerIcons.cpu, size: 14, color: color),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: UETypography.inter(fontSize: 11, color: color, fontWeight: FontWeight.w600),
-            ),
-          ),
-          GestureDetector(
-            onTap: _loadRamInfo,
-            child: Icon(TablerIcons.refresh, size: 13, color: color),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildModelCard(
-      BuildContext context,
-      OfflineModelProvider modelProvider,
-      OfflineModel model,
-      int availableRamMB,
-      ) {
-    final isActive = (modelProvider.activeModel?.id == model.id) || (modelProvider.loadedModelId == model.id);
-    final isDownloading = modelProvider.downloadingModelId == model.id && !model.isDownloaded && model.downloadProgress < 0.999;
-    final isLoadingIntoMemory = modelProvider.isContextLoading && modelProvider.downloadingModelId == model.id;
-    // Show error banner on the card whose load last failed
-    final hasError = modelProvider.error != null &&
-        !modelProvider.isContextLoading &&
-        modelProvider.lastErrorModelId == model.id;
-    // RAM fit check for this specific model
-    final requiredRamMB = (model.sizeMB * 2.5).ceil();
-    final hasEnoughRam = availableRamMB <= 0 || availableRamMB >= requiredRamMB;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: UEColors.surface,
-        border: Border.all(
-          color: isActive ? UEColors.accent.withOpacity(0.6) : UEColors.border,
-          width: isActive ? 1 : 0.5,
-        ),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(TablerIcons.database, color: UEColors.accent, size: 20),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      model.name,
-                      style: UETypography.spaceGrotesk(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: UEColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${model.author} · ${model.sizeMB.toStringAsFixed(0)} MB · ${model.quantization ?? "Q4_K_M"} · needs ~${requiredRamMB} MB RAM',
-                      style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      model.description ?? 'Optimized on-device AI model for offline educational tutoring.',
-                      style: UETypography.inter(fontSize: 11, color: UEColors.textSecondary, height: 1.4),
-                    ),
-                  ],
-                ),
-              ),
-              if (isActive)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: UEColors.greenBg,
-                    border: Border.all(color: UEColors.greenBorder, width: 0.5),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    'Active',
-                    style: UETypography.inter(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: UEColors.green,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 14),
-
-          // ── RAM / load error banner ─────────────────────────────────────
-          if (hasError) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: UEColors.pdfFg.withOpacity(0.08),
-                border: Border.all(color: UEColors.pdfFg.withOpacity(0.35), width: 0.5),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(TablerIcons.alert_triangle, size: 14, color: UEColors.pdfFg),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      modelProvider.error!.split('\n').first, // first line only
-                      style: UETypography.inter(fontSize: 11, color: UEColors.pdfFg, height: 1.4),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-          ],
-          // ────────────────────────────────────────────────────────────────
-
-          if (isDownloading) ...[
-
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: model.downloadProgress,
-                backgroundColor: UEColors.iconBg,
-                color: UEColors.accent,
-                minHeight: 6,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Downloading… ${(model.downloadProgress * 100).toInt()}%',
-                  style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
-                ),
-                GestureDetector(
-                  onTap: () => modelProvider.cancelDownload(model.id),
-                  child: Text(
-                    'Cancel',
-                    style: UETypography.inter(
-                      fontSize: 11,
-                      color: UEColors.pdfFg,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ] else if (model.isDownloaded) ...[
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: isLoadingIntoMemory
-                      ? Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                const SizedBox(
-                                  width: 12,
-                                  height: 12,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Loading into memory…',
-                                  style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'This may take 30–120 seconds depending on model size.',
-                              style: UETypography.inter(fontSize: 10, color: UEColors.textMuted),
-                            ),
-                          ],
-                        )
-                      : GestureDetector(
-                          onTap: (isActive || modelProvider.isContextLoading)
-                              ? null
-                              : () => modelProvider.setActiveModel(model),
-                          child: Container(
-                            height: 34,
-                            decoration: BoxDecoration(
-                              color: isActive ? UEColors.iconBg : UEColors.accent,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              isActive ? 'Currently in use' : 'Use this model',
-                              style: UETypography.inter(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: isActive ? UEColors.textMuted : Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                ),
-                const SizedBox(width: 10),
-                GestureDetector(
-                  onTap: () => modelProvider.deleteModel(model),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: UEColors.pdfFg, width: 0.5),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      'Delete',
-                      style: UETypography.inter(fontSize: 11, color: UEColors.pdfFg, fontWeight: FontWeight.w500),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ] else ...[
-            GestureDetector(
-              onTap: hasEnoughRam ? () => modelProvider.downloadModel(model) : null,
-              child: Container(
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: hasEnoughRam ? UEColors.accent : const Color(0xFFE6A817).withOpacity(0.15),
-                  border: hasEnoughRam ? null : Border.all(color: const Color(0xFFE6A817), width: 0.5),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Column(
-                  children: [
-                    Text(
-                      hasEnoughRam
-                          ? 'Download (${model.sizeMB.toStringAsFixed(0)} MB)'
-                          : '⚠  Low Memory — Download anyway?',
-                      style: UETypography.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: hasEnoughRam ? Colors.white : const Color(0xFFE6A817),
-                      ),
-                    ),
-                    if (!hasEnoughRam) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        'Need ~${requiredRamMB} MB, have ${availableRamMB} MB free. Close other apps first.',
-                        style: UETypography.inter(fontSize: 10, color: const Color(0xFFE6A817)),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ],
       ),
     );
   }
@@ -469,7 +224,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildSystemInfoCard(BuildContext context, OfflineModelProvider modelProvider) {
+  Widget _buildSystemInfoCard(BuildContext context, OfflineModelProvider modelProvider, String activeModelName) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -489,8 +244,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 10),
           _buildInfoRow(
             'Active Model',
-            modelProvider.activeModel?.name ?? 'None loaded',
+            activeModelName,
           ),
+          const SizedBox(height: 10),
+          _buildInfoRow('Engine Status', DenizenAI().isModelLoaded ? 'Loaded in Native RAM' : 'Idle'),
           const SizedBox(height: 10),
           _buildInfoRow('App Version', '1.0.0 (Ubuntu-Edge Custom)'),
         ],
