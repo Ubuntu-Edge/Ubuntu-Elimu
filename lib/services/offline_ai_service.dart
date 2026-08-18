@@ -50,16 +50,27 @@ class OfflineAIService {
     double topP = 0.9,
     int topK = 40,
     double repeatPenalty = 1.1,
-  }) {
-    return _denizen.engine.generateResponseStream(
-      prompt: prompt,
+  }) async* {
+    if (!_denizen.isModelLoaded) {
+      throw Exception('No GGUF AI model loaded. Please activate a model in Settings.');
+    }
+
+    final session = _denizen.createSession(
       systemPrompt: systemPrompt,
       maxTokens: maxTokens,
+    );
+
+    final stream = session.streamChat(
+      prompt,
       temperature: temperature,
       topP: topP,
       topK: topK,
       repeatPenalty: repeatPenalty,
     );
+
+    await for (final token in stream) {
+      yield token;
+    }
   }
 
   Future<String> generateResponse({
@@ -71,10 +82,17 @@ class OfflineAIService {
     int topK = 40,
     double repeatPenalty = 1.1,
   }) async {
-    return _denizen.engine.generateResponse(
-      prompt: prompt,
+    if (!_denizen.isModelLoaded) {
+      throw Exception('No GGUF AI model loaded. Please activate a model in Settings.');
+    }
+
+    final session = _denizen.createSession(
       systemPrompt: systemPrompt,
       maxTokens: maxTokens,
+    );
+
+    return await session.chat(
+      prompt,
       temperature: temperature,
       topP: topP,
       topK: topK,
@@ -118,11 +136,28 @@ class OfflineAIService {
         .replaceAll(RegExp(r'```\s*'), '')
         .trim();
 
-    final start = cleaned.indexOf('{');
-    final end = cleaned.lastIndexOf('}');
-    if (start == -1 || end == -1 || end <= start) return null;
+    final firstBrace = cleaned.indexOf('{');
+    final firstBracket = cleaned.indexOf('[');
 
-    return cleaned.substring(start, end + 1);
+    if (firstBracket != -1 && (firstBrace == -1 || firstBracket < firstBrace)) {
+      final lastBracket = cleaned.lastIndexOf(']');
+      if (lastBracket > firstBracket) {
+        final candidate = cleaned.substring(firstBracket, lastBracket + 1);
+        if (candidate.startsWith('[') && candidate.endsWith(']')) {
+          return '{"flashcards": $candidate}';
+        }
+        return candidate;
+      }
+    }
+
+    if (firstBrace != -1) {
+      final lastBrace = cleaned.lastIndexOf('}');
+      if (lastBrace > firstBrace) {
+        return cleaned.substring(firstBrace, lastBrace + 1);
+      }
+    }
+
+    return null;
   }
 
   // ─── Educational Workflows ───────────────────────────────────
@@ -131,45 +166,63 @@ class OfflineAIService {
   Future<Map<String, dynamic>?> summarizeChunks(List<String> chunks) async {
     final context = chunks.join('\n\n---\n\n');
 
-    return generateJson(
+    final jsonResult = await generateJson(
       systemPrompt:
           'You are an expert study assistant. You help students understand '
-          'academic material clearly and concisely. Always respond with valid '
-          'JSON only. No preamble, no explanation, no markdown fences.',
+          'academic material clearly and concisely. Respond in valid JSON format.',
       prompt: '''
-Analyze the following study material and return a JSON object with this exact structure:
+Analyze the following study material and return a JSON object:
 {
   "title": "short topic title",
   "summary": "2-3 sentence overview",
   "key_concepts": ["concept 1", "concept 2", "concept 3"],
   "exam_focus": ["important point 1", "important point 2"],
-  "notes": ["detailed note 1", "detailed note 2", "detailed note 3"]
+  "notes": ["detailed note 1", "detailed note 2"]
 }
 
 Study material:
 $context
 ''',
-      maxTokens: 800,
+      maxTokens: 600,
     );
+
+    if (jsonResult != null) return jsonResult;
+
+    // Fallback: If JSON decoding fails, request plain text from LLM and format into structured output
+    try {
+      final rawText = await generateResponse(
+        prompt: 'Summarize the core topics and key takeaways from this study material in clear bullet points:\n\n$context',
+        systemPrompt: 'You are a concise academic tutor.',
+        maxTokens: 500,
+      );
+
+      final lines = rawText.split('\n').where((l) => l.trim().isNotEmpty).toList();
+      return {
+        'title': 'AI Generated Summary',
+        'summary': lines.isNotEmpty ? lines.first.replaceAll(RegExp(r'^[•\-\*\d\.\s]+'), '') : rawText,
+        'key_concepts': lines.skip(1).take(4).map((l) => l.replaceAll(RegExp(r'^[•\-\*\d\.\s]+'), '')).toList(),
+        'notes': [rawText],
+      };
+    } catch (e) {
+      debugPrint('Fallback summary generation failed: $e');
+      return null;
+    }
   }
 
   /// Generate flashcards from document material
   Future<List<Map<String, dynamic>>?> generateFlashcards(
     List<String> chunks, {
-    int count = 8,
+    int count = 6,
   }) async {
     final context = chunks.join('\n\n---\n\n');
 
     final result = await generateJson(
       systemPrompt:
-          'You are a flashcard generator for students. Create clear, concise '
-          'question-answer pairs from the provided material. Always respond '
-          'with valid JSON only. No preamble or markdown.',
+          'You are a flashcard generator for students. Create clear question-answer pairs in valid JSON.',
       prompt: '''
-Create exactly $count flashcards from this material. Return a JSON object:
+Create $count flashcards from this material. Return:
 {
   "flashcards": [
-    {"q": "question text", "a": "answer text"},
     {"q": "question text", "a": "answer text"}
   ]
 }
@@ -177,13 +230,43 @@ Create exactly $count flashcards from this material. Return a JSON object:
 Material:
 $context
 ''',
-      maxTokens: 800,
+      maxTokens: 600,
     );
 
-    if (result == null) return null;
-    final list = result['flashcards'];
-    if (list is! List) return null;
-    return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    if (result != null && result['flashcards'] is List) {
+      final list = result['flashcards'] as List;
+      return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+
+    // Fallback: Plain text Q&A parsing from LLM
+    try {
+      final rawText = await generateResponse(
+        prompt: 'Create $count flashcard Q&A pairs from this material formatted strictly as:\nQ: [Question]\nA: [Answer]\n\n$context',
+        systemPrompt: 'You are a flashcard generator.',
+        maxTokens: 500,
+      );
+
+      final cards = <Map<String, dynamic>>[];
+      final lines = rawText.split('\n');
+      String? currentQ;
+
+      for (final line in lines) {
+        final trimmed = line.trim();
+        if (trimmed.toUpperCase().startsWith('Q:')) {
+          currentQ = trimmed.substring(2).trim();
+        } else if (trimmed.toUpperCase().startsWith('A:') && currentQ != null) {
+          final ans = trimmed.substring(2).trim();
+          cards.add({'q': currentQ, 'a': ans});
+          currentQ = null;
+        }
+      }
+
+      if (cards.isNotEmpty) return cards;
+    } catch (e) {
+      debugPrint('Fallback flashcard generation failed: $e');
+    }
+
+    return null;
   }
 
   /// Generate a multi-day study plan
@@ -193,10 +276,8 @@ $context
   }) async {
     final context = chunks.take(3).join('\n\n---\n\n');
 
-    return generateJson(
-      systemPrompt:
-          'You are an academic study planner. Create structured, realistic '
-          'study plans for students. Always respond with valid JSON only.',
+    final result = await generateJson(
+      systemPrompt: 'You are an academic study planner. Return structured JSON study plans.',
       prompt: '''
 Create a $days-day study plan for this material. Return:
 {
@@ -205,17 +286,40 @@ Create a $days-day study plan for this material. Return:
       "day": 1,
       "focus": "topic name",
       "tasks": ["task 1", "task 2"],
-      "duration_minutes": 60
+      "duration_minutes": 45
     }
   ],
-  "tips": ["study tip 1", "study tip 2"]
+  "tips": ["study tip 1"]
 }
 
-Material overview:
+Material:
 $context
 ''',
-      maxTokens: 700,
+      maxTokens: 600,
     );
+
+    if (result != null) return result;
+
+    // Fallback: Plain text study plan parsing
+    try {
+      final rawText = await generateResponse(
+        prompt: 'Create a 3-day study plan for this material with daily targets and estimated time:\n\n$context',
+        systemPrompt: 'You are an academic study planner.',
+        maxTokens: 500,
+      );
+
+      return {
+        'plan': [
+          {'day': 1, 'focus': 'Core Concepts & Definitions', 'tasks': [rawText], 'duration_minutes': 45},
+          {'day': 2, 'focus': 'Deep Analysis & Problem Solving', 'tasks': ['Review key formulas & examples'], 'duration_minutes': 45},
+          {'day': 3, 'focus': 'Revision & Self-Quiz', 'tasks': ['Test knowledge with active recall'], 'duration_minutes': 30},
+        ],
+        'tips': ['Break study sessions into 30-minute intervals', 'Test your recall without looking at notes'],
+      };
+    } catch (e) {
+      debugPrint('Fallback study plan failed: $e');
+      return null;
+    }
   }
 
   /// Stream Socratic tutoring response with conversation context

@@ -169,10 +169,15 @@ class _ResearchScreenState extends State<ResearchScreen> {
       sourceNames = related.map((e) => e.key.name).toList();
     }
 
-    final systemPrompt = contextChunks.isNotEmpty
+    String groundedContext = contextChunks.join("\n\n---\n\n");
+    if (groundedContext.length > 1800) {
+      groundedContext = groundedContext.substring(0, 1800);
+    }
+
+    final systemPrompt = groundedContext.isNotEmpty
         ? 'You are a brilliant research assistant. Provide thorough, well-structured, '
             'accurate answers formatted in clear markdown. Ground your response in the '
-            'following study documents:\n\n${contextChunks.join("\n\n---\n\n")}'
+            'following study documents:\n\n$groundedContext'
         : 'You are a brilliant research assistant. Provide thorough, well-structured, '
             'accurate, and engaging answers formatted in clear markdown for the user.';
 
