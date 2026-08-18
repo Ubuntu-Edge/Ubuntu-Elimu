@@ -69,15 +69,33 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
 
       final defaultModels = DefaultOfflineModels.getMedicalModels();
 
-      // Load models from storage
+      final Map<String, OfflineModel> modelMap = {
+        for (final m in defaultModels) m.id: m,
+      };
+
+      // Load models from storage and merge with default catalog
       final storedModelsJson = prefs.getString(_modelsKey);
       if (storedModelsJson != null) {
-        final List<dynamic> jsonList = jsonDecode(storedModelsJson);
-        _models = jsonList.map((j) => OfflineModel.fromJson(j)).toList();
-      } else {
-        _models = defaultModels;
+        try {
+          final List<dynamic> jsonList = jsonDecode(storedModelsJson);
+          for (final j in jsonList) {
+            final stored = OfflineModel.fromJson(j);
+            if (modelMap.containsKey(stored.id)) {
+              modelMap[stored.id] = modelMap[stored.id]!.copyWith(
+                isDownloaded: stored.isDownloaded,
+                downloadProgress: stored.downloadProgress,
+                localPath: stored.localPath,
+              );
+            } else {
+              modelMap[stored.id] = stored;
+            }
+          }
+        } catch (e) {
+          debugPrint('Error parsing stored models: $e');
+        }
       }
 
+      _models = modelMap.values.toList();
       await _autoDetectDownloadedModels();
 
       // Restore active model if recorded
@@ -92,6 +110,8 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
     } catch (e) {
       debugPrint('❌ OfflineModelProvider initialization error: $e');
+      _models = DefaultOfflineModels.getMedicalModels();
+      notifyListeners();
     }
   }
 
