@@ -62,13 +62,11 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
     }
   }
 
-  Future<void> _downloadAndLoadModel(OfflineModel model) async {
+  Future<void> _downloadModel(OfflineModel model) async {
     setState(() {
       _downloadingModelId = model.id;
       _downloadProgress = 0.0;
-      _statusText = _downloadedModelIds.contains(model.id)
-          ? 'Loading ${model.name} into neural memory...'
-          : 'Preparing download for ${model.name}...';
+      _statusText = 'Preparing download for ${model.name}...';
     });
 
     try {
@@ -77,54 +75,34 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
       }
       await WakelockPlus.enable();
 
-      // Cleanly unload any previous model from C++ RAM to prevent OOM crash
-      if (_denizen.isModelLoaded) {
-        await _denizen.engine.unloadModel();
-      }
-
-      final provider = Provider.of<OfflineModelProvider>(context, listen: false);
-      final modelPath = await provider.getModelFullPath(model);
-      if (modelPath != null && await File(modelPath).exists()) {
-        final success = await _denizen.engine.loadModel(
-          modelPath: modelPath,
-          model: model,
-        );
-        if (!success) {
-          throw Exception('Failed to load model into C++ memory');
-        }
-      } else {
-        await _denizen.models.load(
-          model.id,
-          onProgress: (progress) {
-            if (mounted) {
-              setState(() {
-                _downloadProgress = progress.progress.clamp(0.0, 1.0);
-                _statusText =
-                    'Downloading: ${(progress.bytesDownloaded / (1024 * 1024)).toStringAsFixed(1)} MB / ${(progress.totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB (${progress.percent.toStringAsFixed(1)}%)';
-              });
-            }
-          },
-        );
-      }
+      await ModelDownloadService.instance.downloadModel(
+        model,
+        onProgress: (progress) {
+          if (mounted) {
+            setState(() {
+              _downloadProgress = progress.progress.clamp(0.0, 1.0);
+              _statusText =
+                  'Downloading: ${(progress.bytesDownloaded / (1024 * 1024)).toStringAsFixed(1)} MB / ${(progress.totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB (${progress.percent.toStringAsFixed(1)}%)';
+            });
+          }
+        },
+      );
 
       await _checkDownloadedModels();
 
       if (mounted) {
         setState(() {
           _downloadingModelId = null;
-          _statusText = _denizen.isModelLoaded
-              ? '✅ ${model.name} loaded into neural memory!'
-              : '✅ ${model.name} safely downloaded & ready! Tap "Load into Engine" to activate.';
+          _statusText = '✅ ${model.name} safely downloaded to disk! Go to Settings to load it into memory.';
         });
 
-        // Sync provider so other screens know
+        // Sync provider so Settings page sees it immediately
+        final provider = Provider.of<OfflineModelProvider>(context, listen: false);
         await provider.initialize();
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_denizen.isModelLoaded
-                ? '✅ ${model.name} successfully activated in neural RAM!'
-                : '✅ ${model.name} safely downloaded & saved to storage!'),
+            content: Text('✅ ${model.name} downloaded to storage! Load it from the Settings page.'),
             backgroundColor: UEColors.green,
             duration: const Duration(seconds: 4),
           ),
@@ -230,7 +208,7 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Download any GGUF model below. Once downloaded, it runs 100% locally on your phone without internet.',
+                    'Download any GGUF model below. Once downloaded to 100%, you can load it into engine memory from the Settings page.',
                     style: UETypography.inter(fontSize: 12, color: UEColors.textPrimary, height: 1.4),
                   ),
                 ),
@@ -359,63 +337,86 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
                         ],
                       ),
                     ),
-                  ] else ...[
+                  ] else if (isDownloadedOnDisk) ...[
                     Row(
                       children: [
                         Expanded(
-                          child: SizedBox(
-                            height: 38,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: isDownloadedOnDisk ? const Color(0xFF059669) : UEColors.accent,
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF059669).withOpacity(0.12),
+                              border: Border.all(color: const Color(0xFF059669).withOpacity(0.4), width: 0.5),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(TablerIcons.device_floppy, size: 15, color: Color(0xFF059669)),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'SAVED ON DISK · LOAD IN SETTINGS',
+                                  style: UETypography.inter(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF059669),
+                                  ),
                                 ),
-                                elevation: 0,
-                              ),
-                              icon: isDownloadingThis
-                                  ? const SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                                    )
-                                  : Icon(isDownloadedOnDisk ? TablerIcons.player_play : TablerIcons.download, size: 16),
-                              label: Text(
-                                isDownloadingThis
-                                    ? (isDownloadedOnDisk ? 'LOADING INTO RAM...' : 'DOWNLOADING MODEL...')
-                                    : (isDownloadedOnDisk ? 'LOAD INTO ENGINE' : 'DOWNLOAD MODEL (${model.sizeMB.toStringAsFixed(0)} MB)'),
-                                style: UETypography.inter(fontSize: 12, fontWeight: FontWeight.w600),
-                              ),
-                              onPressed: _downloadingModelId != null ? null : () => _downloadAndLoadModel(model),
+                              ],
                             ),
                           ),
                         ),
-                        if (isDownloadedOnDisk) ...[
-                          const SizedBox(width: 8),
-                          GestureDetector(
-                            onTap: () async {
-                              await _denizen.models.deleteModel(model.id);
-                              await _checkDownloadedModels();
-                              if (context.mounted) {
-                                final provider = Provider.of<OfflineModelProvider>(context, listen: false);
-                                await provider.initialize();
-                              }
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: UEColors.pdfFg, width: 0.5),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                'Delete',
-                                style: UETypography.inter(fontSize: 11, color: UEColors.pdfFg, fontWeight: FontWeight.w500),
-                              ),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () async {
+                            await _denizen.models.deleteModel(model.id);
+                            await _checkDownloadedModels();
+                            if (context.mounted) {
+                              final provider = Provider.of<OfflineModelProvider>(context, listen: false);
+                              await provider.initialize();
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: UEColors.pdfFg, width: 0.5),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'Delete',
+                              style: UETypography.inter(fontSize: 11, color: UEColors.pdfFg, fontWeight: FontWeight.w500),
                             ),
                           ),
-                        ],
+                        ),
                       ],
+                    ),
+                  ] else ...[
+                    SizedBox(
+                      width: double.infinity,
+                      height: 38,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: UEColors.accent,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          elevation: 0,
+                        ),
+                        icon: isDownloadingThis
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                              )
+                            : const Icon(TablerIcons.download, size: 16),
+                        label: Text(
+                          isDownloadingThis
+                              ? 'DOWNLOADING MODEL...'
+                              : 'DOWNLOAD MODEL (${model.sizeMB.toStringAsFixed(0)} MB)',
+                          style: UETypography.inter(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                        onPressed: _downloadingModelId != null ? null : () => _downloadModel(model),
+                      ),
                     ),
                   ],
                 ],
