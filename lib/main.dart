@@ -23,8 +23,6 @@ void main() async {
   final docProvider = DocumentProvider();
   await docProvider.init();
 
-  await OfflineAIService.instance.initialize();
-
   final modelProvider = OfflineModelProvider();
   await modelProvider.initialize();
 

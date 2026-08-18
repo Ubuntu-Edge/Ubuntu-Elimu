@@ -21,7 +21,7 @@ class OfflineAIService {
   // ─── Lifecycle ───────────────────────────────────────────────
 
   Future<void> initialize() async {
-    await _denizen.engine.initialize();
+    // Engine initializes lazily when models are loaded via DenizenAI SDK
   }
 
   Future<bool> loadModel({
