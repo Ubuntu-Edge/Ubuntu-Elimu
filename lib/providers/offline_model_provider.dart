@@ -65,6 +65,23 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
     return true;
   }
 
+  /// Returns available RAM in MB by reading /proc/meminfo (Android only).
+  /// Returns -1 if unavailable or not on Android.
+  Future<int> _getAvailableRamMB() async {
+    try {
+      if (Platform.isAndroid) {
+        final memInfo = await File('/proc/meminfo').readAsString();
+        final match = RegExp(r'MemAvailable:\s+(\d+)').firstMatch(memInfo);
+        if (match != null) {
+          return int.parse(match.group(1)!) ~/ 1024; // kB → MB
+        }
+      }
+    } catch (e) {
+      debugPrint('RAM check unavailable: $e');
+    }
+    return -1; // Unknown — allow load to proceed
+  }
+
   /// Initialize - load models from storage and auto-detect downloaded models
   Future<void> initialize() async {
     try {
@@ -141,24 +158,71 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
     try {
       await WakelockPlus.enable();
 
+      // ── RAM gate ──────────────────────────────────────────────────────────
+      // llama.cpp needs roughly 2.5× the GGUF file size in free RAM.
+      // If the device can't satisfy that, abort now with a clear message
+      // instead of hanging the spinner indefinitely.
+      final availableRamMB = await _getAvailableRamMB();
+      final requiredRamMB = (model.sizeMB * 2.5).ceil();
+      debugPrint('🧠 RAM check — available: ${availableRamMB}MB, required: ${requiredRamMB}MB');
+      if (availableRamMB > 0 && availableRamMB < requiredRamMB) {
+        throw Exception(
+          'Not enough free RAM to load ${model.name}.\n'
+          'Need ~${requiredRamMB} MB but only ${availableRamMB} MB is free.\n'
+          'Close other apps and try again.',
+        );
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       // Cleanly unload any existing model from native C++ RAM first to prevent OOM crash
       if (_denizen.isModelLoaded) {
         await _denizen.engine.unloadModel();
       }
 
-      // models.load() handles both: fresh download + memory loading of cached file
-      await _denizen.models.load(
+      // Fire models.load() without blocking — the SDK sometimes hangs its future
+      // even after successfully loading (platform channel quirk). We poll the engine
+      // directly and clear the spinner as soon as the model is confirmed live.
+      bool loadCompleted = false;
+      Object? loadError;
+
+      // ignore: unawaited_futures
+      _denizen.models.load(
         model.id,
         onProgress: (progress) {
           final fraction = progress.progress.clamp(0.0, 1.0);
           _updateModelProgress(model.id, fraction, fraction >= 0.999);
         },
-      ).timeout(
-        const Duration(minutes: 5),
-        onTimeout: () {
-          debugPrint('⚠️ models.load timed out after 5 minutes — model may be loading in background');
-        },
-      );
+      ).then((_) {
+        loadCompleted = true;
+      }).catchError((e) {
+        loadError = e;
+        loadCompleted = true; // treat error as done so the poll loop exits
+      });
+
+      // Poll every 1 second for up to 3 minutes
+      const pollInterval = Duration(seconds: 1);
+      const maxWait = Duration(minutes: 3);
+      final deadline = DateTime.now().add(maxWait);
+
+      while (!loadCompleted) {
+        await Future.delayed(pollInterval);
+
+        // Engine confirms model is live — we're done regardless of SDK future
+        if (_denizen.engine.loadedModel?.id == model.id) {
+          debugPrint('✅ Engine confirms model live: ${model.name}');
+          loadCompleted = true;
+          break;
+        }
+
+        if (DateTime.now().isAfter(deadline)) {
+          debugPrint('⚠️ Load timed out after 3 minutes');
+          break;
+        }
+      }
+
+      if (loadError != null) {
+        throw loadError!;
+      }
 
       _activeModel = model;
       final prefs = await SharedPreferences.getInstance();

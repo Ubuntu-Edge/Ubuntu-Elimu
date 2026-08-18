@@ -90,6 +90,12 @@ class SettingsScreen extends StatelessWidget {
     final isActive = (modelProvider.activeModel?.id == model.id) || (modelProvider.loadedModelId == model.id);
     final isDownloading = modelProvider.downloadingModelId == model.id && !model.isDownloaded && model.downloadProgress < 0.999;
     final isLoadingIntoMemory = modelProvider.isContextLoading && modelProvider.downloadingModelId == model.id;
+    // Show provider error only on the card that last triggered it
+    final hasError = modelProvider.error != null &&
+        !modelProvider.isContextLoading &&
+        modelProvider.downloadingModelId == null &&
+        (modelProvider.activeModel?.id == model.id || modelProvider.error!.contains(model.name));
+
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -155,7 +161,36 @@ class SettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 14),
 
+          // ── RAM / load error banner ─────────────────────────────────────
+          if (hasError) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: UEColors.pdfFg.withOpacity(0.08),
+                border: Border.all(color: UEColors.pdfFg.withOpacity(0.35), width: 0.5),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(TablerIcons.alert_triangle, size: 14, color: UEColors.pdfFg),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      modelProvider.error!.split('\n').first, // first line only
+                      style: UETypography.inter(fontSize: 11, color: UEColors.pdfFg, height: 1.4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          // ────────────────────────────────────────────────────────────────
+
           if (isDownloading) ...[
+
             ClipRRect(
               borderRadius: BorderRadius.circular(4),
               child: LinearProgressIndicator(
