@@ -20,12 +20,38 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
   String? _downloadingModelId;
   double _downloadProgress = 0.0;
   String _statusText = '';
+  final Set<String> _downloadedModelIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _checkDownloadedModels();
+  }
+
+  Future<void> _checkDownloadedModels() async {
+    final Set<String> downloaded = {};
+    for (final model in _availableModels) {
+      try {
+        if (await _denizen.models.isDownloaded(model.id)) {
+          downloaded.add(model.id);
+        }
+      } catch (_) {}
+    }
+    if (mounted) {
+      setState(() {
+        _downloadedModelIds.clear();
+        _downloadedModelIds.addAll(downloaded);
+      });
+    }
+  }
 
   Future<void> _downloadAndLoadModel(OfflineModel model) async {
     setState(() {
       _downloadingModelId = model.id;
       _downloadProgress = 0.0;
-      _statusText = 'Preparing download for ${model.name}...';
+      _statusText = _downloadedModelIds.contains(model.id)
+          ? 'Loading ${model.name} into neural memory...'
+          : 'Preparing download for ${model.name}...';
     });
 
     try {
@@ -41,6 +67,8 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
           }
         },
       );
+
+      await _checkDownloadedModels();
 
       if (mounted) {
         setState(() {
@@ -60,6 +88,7 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
         );
       }
     } catch (e) {
+      await _checkDownloadedModels();
       if (mounted) {
         setState(() {
           _downloadingModelId = null;
@@ -157,6 +186,7 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
           ..._availableModels.map((model) {
             final isCurrentlyLoaded = loadedModelId == model.id;
             final isDownloadingThis = _downloadingModelId == model.id;
+            final isDownloadedOnDisk = _downloadedModelIds.contains(model.id);
 
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
@@ -241,31 +271,62 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
                       ),
                     ),
                   ] else ...[
-                    SizedBox(
-                      width: double.infinity,
-                      height: 38,
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: UEColors.accent,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 38,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isDownloadedOnDisk ? const Color(0xFF059669) : UEColors.accent,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                elevation: 0,
+                              ),
+                              icon: isDownloadingThis
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                    )
+                                  : Icon(isDownloadedOnDisk ? TablerIcons.player_play : TablerIcons.download, size: 16),
+                              label: Text(
+                                isDownloadingThis
+                                    ? (isDownloadedOnDisk ? 'LOADING INTO RAM...' : 'DOWNLOADING & LOADING...')
+                                    : (isDownloadedOnDisk ? 'LOAD INTO ENGINE' : 'DOWNLOAD & LOAD ENGINE'),
+                                style: UETypography.inter(fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
+                              onPressed: _downloadingModelId != null ? null : () => _downloadAndLoadModel(model),
+                            ),
                           ),
-                          elevation: 0,
                         ),
-                        icon: isDownloadingThis
-                            ? const SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                              )
-                            : const Icon(TablerIcons.download, size: 16),
-                        label: Text(
-                          isDownloadingThis ? 'DOWNLOADING & LOADING...' : 'DOWNLOAD & LOAD ENGINE',
-                          style: UETypography.inter(fontSize: 12, fontWeight: FontWeight.w600),
-                        ),
-                        onPressed: _downloadingModelId != null ? null : () => _downloadAndLoadModel(model),
-                      ),
+                        if (isDownloadedOnDisk) ...[
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () async {
+                              await _denizen.models.deleteModel(model.id);
+                              await _checkDownloadedModels();
+                              if (context.mounted) {
+                                final provider = Provider.of<OfflineModelProvider>(context, listen: false);
+                                await provider.initialize();
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: UEColors.pdfFg, width: 0.5),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                'Delete',
+                                style: UETypography.inter(fontSize: 11, color: UEColors.pdfFg, fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ],
                 ],

@@ -4,6 +4,7 @@ import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
 import 'package:denizen_ai/denizen_ai.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
+import '../../../models/offline_model.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../providers/offline_model_provider.dart';
 import 'model_registry_screen.dart';
@@ -30,6 +31,7 @@ class SettingsScreen extends StatelessWidget {
     final denizen = DenizenAI();
     final isRealModelActive = denizen.isModelLoaded;
     final activeModelName = modelProvider.activeModel?.name ?? denizen.engine.loadedModel?.name ?? 'No Model Loaded';
+    final downloadedModels = modelProvider.models.where((m) => m.isDownloaded).toList();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -151,6 +153,14 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
 
+          // Downloaded models ready to load directly from settings
+          if (downloadedModels.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            _buildSectionTitle('DOWNLOADED MODELS READY TO LOAD'),
+            const SizedBox(height: 10),
+            ...downloadedModels.map((model) => _buildDownloadedModelCard(context, modelProvider, model)),
+          ],
+
           const SizedBox(height: 24),
           _buildSectionTitle('PREFERENCES'),
           const SizedBox(height: 10),
@@ -160,6 +170,96 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 10),
           _buildSystemInfoCard(context, modelProvider, activeModelName),
           const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDownloadedModelCard(BuildContext context, OfflineModelProvider modelProvider, OfflineModel model) {
+    final isLoaded = (modelProvider.activeModel?.id == model.id) || (modelProvider.loadedModelId == model.id);
+    final isLoadingThis = modelProvider.isContextLoading && modelProvider.downloadingModelId == model.id;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: UEColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isLoaded ? UEColors.green.withOpacity(0.6) : UEColors.border,
+          width: isLoaded ? 1.5 : 0.5,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isLoaded ? TablerIcons.circle_check : TablerIcons.device_floppy,
+            color: isLoaded ? UEColors.green : UEColors.accent,
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  model.name,
+                  style: UETypography.spaceGrotesk(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: UEColors.textPrimary,
+                  ),
+                ),
+                Text(
+                  '${model.sizeMB.toStringAsFixed(0)} MB · Ready on disk',
+                  style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
+                ),
+              ],
+            ),
+          ),
+          if (isLoaded)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: UEColors.greenBg,
+                border: Border.all(color: UEColors.greenBorder, width: 0.5),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                'In Memory',
+                style: UETypography.inter(fontSize: 11, fontWeight: FontWeight.w600, color: UEColors.green),
+              ),
+            )
+          else
+            GestureDetector(
+              onTap: modelProvider.isContextLoading ? null : () => modelProvider.setActiveModel(model),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF059669),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    if (isLoadingThis) ...[
+                      const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 6),
+                    ] else ...[
+                      const Icon(TablerIcons.player_play, size: 14, color: Colors.white),
+                      const SizedBox(width: 4),
+                    ],
+                    Text(
+                      isLoadingThis ? 'Loading...' : 'Load Model',
+                      style: UETypography.inter(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
