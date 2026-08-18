@@ -77,6 +77,11 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
       }
       await WakelockPlus.enable();
 
+      // Cleanly unload any previous model from C++ RAM to prevent OOM crash
+      if (_denizen.isModelLoaded) {
+        await _denizen.engine.unloadModel();
+      }
+
       await _denizen.models.load(
         model.id,
         onProgress: (progress) {
