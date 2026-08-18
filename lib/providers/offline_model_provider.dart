@@ -98,20 +98,35 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
       };
 
       // Load models from storage and merge with default catalog
-      final storedModelsJson = prefs.getString(_modelsKey);
+      String? storedModelsJson;
+      try {
+        final raw = prefs.get(_modelsKey);
+        if (raw is String) {
+          storedModelsJson = raw;
+        } else if (raw is List) {
+          storedModelsJson = jsonEncode(raw);
+        }
+      } catch (e) {
+        debugPrint('Safe prefs read error: $e');
+      }
+
       if (storedModelsJson != null) {
         try {
-          final List<dynamic> jsonList = jsonDecode(storedModelsJson);
-          for (final j in jsonList) {
-            final stored = OfflineModel.fromJson(j);
-            if (modelMap.containsKey(stored.id)) {
-              modelMap[stored.id] = modelMap[stored.id]!.copyWith(
-                isDownloaded: stored.isDownloaded,
-                downloadProgress: stored.downloadProgress,
-                localPath: stored.localPath,
-              );
-            } else {
-              modelMap[stored.id] = stored;
+          final dynamic decoded = jsonDecode(storedModelsJson);
+          if (decoded is List) {
+            for (final j in decoded) {
+              if (j is Map<String, dynamic>) {
+                final stored = OfflineModel.fromJson(j);
+                if (modelMap.containsKey(stored.id)) {
+                  modelMap[stored.id] = modelMap[stored.id]!.copyWith(
+                    isDownloaded: stored.isDownloaded,
+                    downloadProgress: stored.downloadProgress,
+                    localPath: stored.localPath,
+                  );
+                } else {
+                  modelMap[stored.id] = stored;
+                }
+              }
             }
           }
         } catch (e) {
@@ -123,7 +138,14 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
       await _autoDetectDownloadedModels();
 
       // Restore active model if recorded
-      final storedActiveId = prefs.getString(_activeModelKey);
+      String? storedActiveId;
+      try {
+        final rawActive = prefs.get(_activeModelKey);
+        if (rawActive is String) {
+          storedActiveId = rawActive;
+        }
+      } catch (_) {}
+
       if (storedActiveId != null) {
         final activeIndex = _models.indexWhere((m) => m.id == storedActiveId);
         if (activeIndex != -1 && _models[activeIndex].isDownloaded) {
@@ -135,6 +157,7 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('❌ OfflineModelProvider initialization error: $e');
       _models = DefaultOfflineModels.getMedicalModels();
+      await _autoDetectDownloadedModels();
       notifyListeners();
     }
   }
@@ -167,19 +190,31 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
         await _denizen.engine.unloadModel();
       }
 
-      await _denizen.models.load(
-        model.id,
-        onProgress: (progress) {
-          final fraction = progress.progress.clamp(0.0, 1.0);
-          final isDownloaded = fraction >= 0.999;
-          _updateModelProgress(model.id, fraction, isDownloaded);
-        },
-      );
+      final modelPath = await getModelFullPath(model);
+      if (modelPath != null && await File(modelPath).exists()) {
+        debugPrint('🚀 Direct engine load from storage: $modelPath');
+        final success = await _denizen.engine.loadModel(
+          modelPath: modelPath,
+          model: model,
+        );
+        if (!success) {
+          throw Exception('Failed to initialize llama.cpp runtime for ${model.name}');
+        }
+      } else {
+        await _denizen.models.load(
+          model.id,
+          onProgress: (progress) {
+            final fraction = progress.progress.clamp(0.0, 1.0);
+            final isDownloaded = fraction >= 0.999;
+            _updateModelProgress(model.id, fraction, isDownloaded);
+          },
+        );
+      }
 
       _activeModel = model;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_activeModelKey, model.id);
-      _updateModelProgress(model.id, 1.0, true);
+      _updateModelProgress(model.id, 1.0, true, path: modelPath);
       await _saveModelsToPrefs();
       debugPrint('✅ Model loaded into Denizen engine: ${model.name}');
     } catch (e) {
