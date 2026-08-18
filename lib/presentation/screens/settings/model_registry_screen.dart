@@ -24,11 +24,25 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
   double _downloadProgress = 0.0;
   String _statusText = '';
   final Set<String> _downloadedModelIds = {};
+  int _availableRamMB = -1;
 
   @override
   void initState() {
     super.initState();
     _checkDownloadedModels();
+    _loadRamInfo();
+  }
+
+  Future<void> _loadRamInfo() async {
+    try {
+      if (Platform.isAndroid) {
+        final memInfo = await File('/proc/meminfo').readAsString();
+        final match = RegExp(r'MemAvailable:\s+(\d+)').firstMatch(memInfo);
+        if (match != null && mounted) {
+          setState(() => _availableRamMB = int.parse(match.group(1)!) ~/ 1024);
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _checkDownloadedModels() async {
@@ -117,6 +131,45 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
     }
   }
 
+  Widget _buildRamBar(int availableMB) {
+    final hasRamReading = availableMB > 0;
+    final color = !hasRamReading
+        ? UEColors.accent
+        : availableMB >= 700
+            ? UEColors.green
+            : availableMB >= 400
+                ? const Color(0xFFE6A817)
+                : UEColors.pdfFg;
+    final text = hasRamReading
+        ? 'Free device memory: ${availableMB} MB (${availableMB >= 700 ? "Good" : availableMB >= 400 ? "Low" : "Critical"})'
+        : 'Engine Memory: Auto-Managed by On-Device AI Runtime';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        border: Border.all(color: color.withOpacity(0.3), width: 0.5),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(TablerIcons.cpu, size: 14, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: UETypography.inter(fontSize: 11, color: color, fontWeight: FontWeight.w600),
+            ),
+          ),
+          GestureDetector(
+            onTap: _loadRamInfo,
+            child: Icon(TablerIcons.refresh, size: 13, color: color),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final loadedModelId = _denizen.engine.loadedModel?.id;
@@ -142,6 +195,8 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
+          _buildRamBar(_availableRamMB),
+          const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -200,6 +255,7 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
             final isCurrentlyLoaded = loadedModelId == model.id;
             final isDownloadingThis = _downloadingModelId == model.id;
             final isDownloadedOnDisk = _downloadedModelIds.contains(model.id);
+            final requiredRamMB = (model.sizeMB * 2.5).ceil();
 
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
@@ -248,7 +304,7 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '${model.author} · ${model.quantization ?? "Q4_K_M"}',
+                    '${model.author} · ${model.quantization ?? "Q4_K_M"} · needs ~${requiredRamMB} MB RAM',
                     style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
                   ),
                   const SizedBox(height: 6),
@@ -305,12 +361,12 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
                                       child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                                     )
                                   : Icon(isDownloadedOnDisk ? TablerIcons.player_play : TablerIcons.download, size: 16),
-                                label: Text(
-                                  isDownloadingThis
-                                      ? (isDownloadedOnDisk ? 'LOADING INTO RAM...' : 'DOWNLOADING MODEL...')
-                                      : (isDownloadedOnDisk ? 'LOAD INTO ENGINE' : 'DOWNLOAD MODEL (${model.sizeMB.toStringAsFixed(0)} MB)'),
-                                  style: UETypography.inter(fontSize: 12, fontWeight: FontWeight.w600),
-                                ),
+                              label: Text(
+                                isDownloadingThis
+                                    ? (isDownloadedOnDisk ? 'LOADING INTO RAM...' : 'DOWNLOADING MODEL...')
+                                    : (isDownloadedOnDisk ? 'LOAD INTO ENGINE' : 'DOWNLOAD MODEL (${model.sizeMB.toStringAsFixed(0)} MB)'),
+                                style: UETypography.inter(fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
                               onPressed: _downloadingModelId != null ? null : () => _downloadAndLoadModel(model),
                             ),
                           ),

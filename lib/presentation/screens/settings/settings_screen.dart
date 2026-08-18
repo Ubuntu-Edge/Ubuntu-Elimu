@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
 import 'package:denizen_ai/denizen_ai.dart';
+import 'dart:io';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
 import '../../../models/offline_model.dart';
@@ -9,19 +10,84 @@ import '../../../providers/settings_provider.dart';
 import '../../../providers/offline_model_provider.dart';
 import 'model_registry_screen.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  int _availableRamMB = -1;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRamInfo();
+  }
+
+  Future<void> _loadRamInfo() async {
+    try {
+      if (Platform.isAndroid) {
+        final memInfo = await File('/proc/meminfo').readAsString();
+        final match = RegExp(r'MemAvailable:\s+(\d+)').firstMatch(memInfo);
+        if (match != null && mounted) {
+          setState(() => _availableRamMB = int.parse(match.group(1)!) ~/ 1024);
+        }
+      }
+    } catch (_) {}
+  }
 
   void _openModelRegistry(BuildContext context) async {
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const ModelRegistryScreen()),
     );
-    // Refresh model provider state upon return
-    if (context.mounted) {
+    // Refresh state upon return
+    if (mounted) {
+      _loadRamInfo();
       final provider = Provider.of<OfflineModelProvider>(context, listen: false);
       await provider.initialize();
     }
+  }
+
+  Widget _buildRamBar(int availableMB) {
+    final hasRamReading = availableMB > 0;
+    final color = !hasRamReading
+        ? UEColors.accent
+        : availableMB >= 700
+            ? UEColors.green
+            : availableMB >= 400
+                ? const Color(0xFFE6A817)
+                : UEColors.pdfFg;
+    final text = hasRamReading
+        ? 'Free device memory: ${availableMB} MB (${availableMB >= 700 ? "Good" : availableMB >= 400 ? "Low" : "Critical"})'
+        : 'Engine Memory: Auto-Managed by On-Device AI Runtime';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        border: Border.all(color: color.withOpacity(0.3), width: 0.5),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(TablerIcons.cpu, size: 14, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: UETypography.inter(fontSize: 11, color: color, fontWeight: FontWeight.w600),
+            ),
+          ),
+          GestureDetector(
+            onTap: _loadRamInfo,
+            child: Icon(TablerIcons.refresh, size: 13, color: color),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -40,6 +106,8 @@ class SettingsScreen extends StatelessWidget {
         children: [
           const SizedBox(height: 8),
           _buildSectionTitle('OFFLINE AI ENGINE'),
+          const SizedBox(height: 10),
+          _buildRamBar(_availableRamMB),
           const SizedBox(height: 10),
 
           // Engine Status Card
@@ -211,7 +279,7 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '${model.sizeMB.toStringAsFixed(0)} MB · Ready on disk',
+                  '${model.sizeMB.toStringAsFixed(0)} MB · Ready on disk · needs ~${(model.sizeMB * 2.5).ceil()} MB RAM',
                   style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
                 ),
               ],
