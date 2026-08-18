@@ -116,7 +116,8 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
         model.id,
         onProgress: (progress) {
           final fraction = progress.progress.clamp(0.0, 1.0);
-          _updateModelProgress(model.id, fraction, false);
+          final isDownloaded = fraction >= 0.999;
+          _updateModelProgress(model.id, fraction, isDownloaded);
         },
       );
 
@@ -125,10 +126,14 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
       await prefs.setString(_activeModelKey, model.id);
 
       _updateModelProgress(model.id, 1.0, true);
+      await _saveModelsToPrefs();
       debugPrint('✅ Model loaded successfully into Denizen AI engine: ${model.name}');
     } catch (e) {
       _error = 'Error loading model: $e';
-      _updateModelProgress(model.id, 0.0, false);
+      final isAlreadyDownloaded = await _denizen.models.isDownloaded(model.id);
+      if (!isAlreadyDownloaded) {
+        _updateModelProgress(model.id, 0.0, false);
+      }
       debugPrint('❌ Error loading model: $e');
     } finally {
       try {
@@ -167,7 +172,20 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
         isDownloaded: downloaded,
         localPath: path,
       );
+      if (downloaded) {
+        _saveModelsToPrefs();
+      }
       notifyListeners();
+    }
+  }
+
+  Future<void> _saveModelsToPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonList = _models.map((m) => m.toJson()).toList();
+      await prefs.setString(_modelsKey, jsonEncode(jsonList));
+    } catch (e) {
+      debugPrint('Error saving models to prefs: $e');
     }
   }
 
