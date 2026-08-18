@@ -137,20 +137,14 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
       _models = modelMap.values.toList();
       await _autoDetectDownloadedModels();
 
-      // Restore active model if recorded
-      String? storedActiveId;
-      try {
-        final rawActive = prefs.get(_activeModelKey);
-        if (rawActive is String) {
-          storedActiveId = rawActive;
-        }
-      } catch (_) {}
-
-      if (storedActiveId != null) {
-        final activeIndex = _models.indexWhere((m) => m.id == storedActiveId);
-        if (activeIndex != -1 && _models[activeIndex].isDownloaded) {
+      // Verify if a model is actually live in native C++ memory
+      if (_denizen.isModelLoaded && _denizen.engine.loadedModel != null) {
+        final activeIndex = _models.indexWhere((m) => m.id == _denizen.engine.loadedModel!.id);
+        if (activeIndex != -1) {
           _activeModel = _models[activeIndex];
         }
+      } else {
+        _activeModel = null;
       }
 
       notifyListeners();
@@ -190,31 +184,19 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
         await _denizen.engine.unloadModel();
       }
 
-      final modelPath = await getModelFullPath(model);
-      if (modelPath != null && await File(modelPath).exists()) {
-        debugPrint('🚀 Direct engine load from storage: $modelPath');
-        final success = await _denizen.engine.loadModel(
-          modelPath: modelPath,
-          model: model,
-        );
-        if (!success) {
-          throw Exception('Failed to initialize llama.cpp runtime for ${model.name}');
-        }
-      } else {
-        await _denizen.models.load(
-          model.id,
-          onProgress: (progress) {
-            final fraction = progress.progress.clamp(0.0, 1.0);
-            final isDownloaded = fraction >= 0.999;
-            _updateModelProgress(model.id, fraction, isDownloaded);
-          },
-        );
-      }
+      await _denizen.models.load(
+        model.id,
+        onProgress: (progress) {
+          final fraction = progress.progress.clamp(0.0, 1.0);
+          final isDownloaded = fraction >= 0.999;
+          _updateModelProgress(model.id, fraction, isDownloaded);
+        },
+      );
 
       _activeModel = model;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_activeModelKey, model.id);
-      _updateModelProgress(model.id, 1.0, true, path: modelPath);
+      _updateModelProgress(model.id, 1.0, true);
       await _saveModelsToPrefs();
       debugPrint('✅ Model loaded into Denizen engine: ${model.name}');
     } catch (e) {
