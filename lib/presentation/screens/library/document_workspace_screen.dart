@@ -65,13 +65,21 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
 
   List<String> get _docChunks {
     final doc = widget.document;
-    if (doc.chunks != null && (doc.chunks as List).isNotEmpty) {
-      return List<String>.from(doc.chunks);
+    if (doc.chunks != null && doc.chunks.isNotEmpty) {
+      final selected = <String>[];
+      int currentLength = 0;
+      for (final chunk in doc.chunks) {
+        if (currentLength + chunk.length > 1800 && selected.isNotEmpty) break;
+        selected.add(chunk);
+        currentLength += chunk.length;
+      }
+      return selected;
     }
-    if (doc.extractedText != null && (doc.extractedText as String).isNotEmpty) {
-      return [doc.extractedText as String];
+    if (doc.extractedText != null && doc.extractedText!.isNotEmpty) {
+      final text = doc.extractedText!;
+      return [text.length > 1800 ? text.substring(0, 1800) : text];
     }
-    return [doc.name ?? 'Document'];
+    return [doc.name];
   }
 
   Future<void> _generateSummary() async {
@@ -252,15 +260,16 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
   // ================= DOCUMENT READER =================
   Widget _buildReaderTab(dynamic doc) {
     final filePath = doc.filePath?.toString();
-    final docType = doc.type;
-    final isPdf = docType == DocType.pdf;
+    final isPdf = doc.type == DocType.pdf ||
+        (filePath != null && filePath.toLowerCase().endsWith('.pdf')) ||
+        (doc.name != null && doc.name.toString().toLowerCase().endsWith('.pdf'));
 
-    // ── PDF: use Syncfusion native renderer ──────────────────
+    // ── PDF: use Syncfusion native renderer if file exists on device ──
     if (isPdf && filePath != null && File(filePath).existsSync()) {
-      return _PdfReaderView(filePath: filePath);
+      return _PdfReaderView(filePath: filePath, extractedFallback: _safeExtractedText(doc));
     }
 
-    // ── DOCX / other: rich scrollable text view ──────────────
+    // ── DOCX / other / Text notes fallback: rich scrollable text view ──────────────
     final text = _safeExtractedText(doc);
     final hasText = text.trim().isNotEmpty;
 
@@ -285,7 +294,7 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(TablerIcons.file_off, color: UEColors.textDim, size: 48),
+                  const Icon(TablerIcons.file_off, color: UEColors.textDim, size: 48),
                   const SizedBox(height: 12),
                   Text(
                     'No readable text found in this document.',
@@ -591,7 +600,11 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
 // ════════════════════════════════════════════════════════════
 class _PdfReaderView extends StatefulWidget {
   final String filePath;
-  const _PdfReaderView({required this.filePath});
+  final String? extractedFallback;
+  const _PdfReaderView({
+    required this.filePath,
+    this.extractedFallback,
+  });
 
   @override
   State<_PdfReaderView> createState() => _PdfReaderViewState();
@@ -603,6 +616,7 @@ class _PdfReaderViewState extends State<_PdfReaderView> {
   int _totalPages = 0;
   bool _isLoading = true;
   String? _error;
+  bool _showTextFallback = false;
 
   @override
   void dispose() {
@@ -612,6 +626,43 @@ class _PdfReaderViewState extends State<_PdfReaderView> {
 
   @override
   Widget build(BuildContext context) {
+    if (_showTextFallback && widget.extractedFallback != null) {
+      return Container(
+        color: UEColors.bg,
+        child: Scrollbar(
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Text Extract View', style: TextStyle(color: UEColors.accent, fontSize: 12, fontWeight: FontWeight.bold)),
+                    TextButton.icon(
+                      onPressed: () => setState(() => _showTextFallback = false),
+                      icon: const Icon(Icons.picture_as_pdf, size: 14),
+                      label: const Text('Back to PDF', style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SelectableText(
+                  widget.extractedFallback!,
+                  style: UETypography.inter(
+                    fontSize: 14,
+                    color: UEColors.textSecondary,
+                    height: 1.75,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     if (_error != null) {
       return Center(
         child: Padding(
@@ -621,7 +672,7 @@ class _PdfReaderViewState extends State<_PdfReaderView> {
             children: [
               const Icon(Icons.broken_image_outlined, color: Colors.orange, size: 48),
               const SizedBox(height: 12),
-              Text(
+              const Text(
                 'Could not render PDF',
                 style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
               ),
@@ -631,6 +682,14 @@ class _PdfReaderViewState extends State<_PdfReaderView> {
                 style: const TextStyle(color: Colors.white54, fontSize: 12),
                 textAlign: TextAlign.center,
               ),
+              const SizedBox(height: 16),
+              if (widget.extractedFallback != null && widget.extractedFallback!.trim().isNotEmpty)
+                ElevatedButton.icon(
+                  onPressed: () => setState(() => _showTextFallback = true),
+                  icon: const Icon(Icons.text_snippet, size: 16),
+                  label: const Text('View Extracted Text'),
+                  style: ElevatedButton.styleFrom(backgroundColor: UEColors.accent),
+                ),
             ],
           ),
         ),
@@ -655,13 +714,17 @@ class _PdfReaderViewState extends State<_PdfReaderView> {
             }
           },
           onPageChanged: (details) {
-            if (mounted) setState(() => _currentPage = details.newPageNumber);
+            if (mounted) {
+              setState(() => _currentPage = details.newPageNumber);
+            }
           },
           onDocumentLoadFailed: (details) {
-            if (mounted) setState(() {
-              _error = details.description;
-              _isLoading = false;
-            });
+            if (mounted) {
+              setState(() {
+                _error = details.description;
+                _isLoading = false;
+              });
+            }
           },
         ),
 
@@ -692,7 +755,7 @@ class _PdfReaderViewState extends State<_PdfReaderView> {
             ),
           ),
 
-        // ── Zoom controls ──────────────────────────────────────
+        // ── Zoom & Mode controls ───────────────────────────────
         if (!_isLoading)
           Positioned(
             bottom: 16,
@@ -710,6 +773,13 @@ class _PdfReaderViewState extends State<_PdfReaderView> {
                   onTap: () => _pdfController.zoomLevel =
                       (_pdfController.zoomLevel - 0.25).clamp(0.75, 3.0),
                 ),
+                if (widget.extractedFallback != null && widget.extractedFallback!.trim().isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  _ZoomButton(
+                    icon: Icons.text_snippet,
+                    onTap: () => setState(() => _showTextFallback = true),
+                  ),
+                ],
               ],
             ),
           ),

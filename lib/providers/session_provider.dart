@@ -40,18 +40,36 @@ class SessionProvider with ChangeNotifier {
     bool socratic = true,
     String language = 'English',
     List<String>? contextChunks,
+    DocumentProvider? docProvider,
   }) {
-    final context = (contextChunks != null && contextChunks.isNotEmpty)
-        ? '\n\n[DOCUMENT KNOWLEDGE BASE]:\n${contextChunks.take(3).join('\n---\n')}\n'
-        : '';
+    String context = '';
+    if (contextChunks != null && contextChunks.isNotEmpty) {
+      final joined = contextChunks.join('\n---\n');
+      final safeJoined = joined.length > 1800 ? joined.substring(0, 1800) : joined;
+      context = '\n\n[DOCUMENT KNOWLEDGE BASE]:\n$safeJoined\n';
+    }
 
     final systemPrompt = socratic
         ? 'You are an expert Socratic tutor for Ubuntu Elimu. You guide students step-by-step through questions instead of directly giving answers. Encourage critical thinking, be patient, and respond in $language.$context'
         : 'You are a direct, clear study assistant for Ubuntu Elimu. Answer questions plainly with worked examples where helpful. Be encouraging, concise, and respond in $language.$context';
 
+    if (docProvider != null && docProvider.isRagReady) {
+      try {
+        _activeSession = _denizen.createRagSession(
+          embeddingProvider: docProvider.embeddingProvider,
+          storageService: docProvider.storageService,
+          baseSystemPrompt: systemPrompt,
+          maxTokens: 1024,
+        );
+        return;
+      } catch (e) {
+        debugPrint('Notice on createRagSession fallback: $e');
+      }
+    }
+
     _activeSession = _denizen.createSession(
       systemPrompt: systemPrompt,
-      maxTokens: 2048,
+      maxTokens: 1024,
     );
   }
 
@@ -171,6 +189,7 @@ class SessionProvider with ChangeNotifier {
         socratic: socratic,
         language: language,
         contextChunks: chunks,
+        docProvider: docProvider,
       );
 
       // Stream response via DenizenSession

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'package:denizen_ai/denizen_ai.dart';
 
 import '../models/document.dart';
@@ -80,32 +81,49 @@ class DocumentProvider with ChangeNotifier {
 
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf', 'docx'],
-      withData: false,
+      allowedExtensions: ['pdf', 'docx', 'txt'],
+      withData: true,
     );
 
     if (result == null || result.files.isEmpty) return;
 
     final pickedFile = result.files.first;
-    if (pickedFile.path == null) return;
+    final extension = (pickedFile.extension ?? '').toLowerCase();
 
-    final sourceFile = File(pickedFile.path!);
-    final extension = pickedFile.extension?.toLowerCase() ?? '';
-
-    DocType? type;
+    DocType type = DocType.other;
     if (extension == 'pdf') type = DocType.pdf;
     if (extension == 'docx') type = DocType.docx;
 
-    if (type == null) {
-      _error = 'Unsupported file type';
+    // Save locally to persistent app storage
+    final appDir = await getApplicationDocumentsDirectory();
+    final docDir = Directory('${appDir.path}/documents');
+    await docDir.create(recursive: true);
+
+    final safeName = pickedFile.name.replaceAll(RegExp(r'[^\w\.\-]'), '_');
+    final savedPath = '${docDir.path}/$safeName';
+    final savedFile = File(savedPath);
+
+    if (pickedFile.path != null && File(pickedFile.path!).existsSync()) {
+      await File(pickedFile.path!).copy(savedPath);
+    } else if (pickedFile.bytes != null && pickedFile.bytes!.isNotEmpty) {
+      await savedFile.writeAsBytes(pickedFile.bytes!);
+    } else {
+      _error = 'Unable to read selected file';
       notifyListeners();
       return;
     }
 
-    // Save locally
-    final appDir = await getApplicationDocumentsDirectory();
-    final savedPath = '${appDir.path}/${pickedFile.name}';
-    await sourceFile.copy(savedPath);
+    int? pageCount;
+    if (type == DocType.pdf) {
+      try {
+        final pdfBytes = await savedFile.readAsBytes();
+        final pdfDoc = PdfDocument(inputBytes: pdfBytes);
+        pageCount = pdfDoc.pages.count;
+        pdfDoc.dispose();
+      } catch (e) {
+        debugPrint('⚠️ Could not determine PDF page count: $e');
+      }
+    }
 
     final doc = Document(
       id: 'doc_${DateTime.now().millisecondsSinceEpoch}',
@@ -114,6 +132,7 @@ class DocumentProvider with ChangeNotifier {
       sizeBytes: pickedFile.size,
       addedAt: DateTime.now(),
       filePath: savedPath,
+      pageCount: pageCount,
       isProcessed: false,
       chunks: [],
     );
@@ -157,6 +176,9 @@ class DocumentProvider with ChangeNotifier {
 
       _saveToHive(updated);
       notifyListeners();
+
+      // Index in background for native offline sqlite-vec RAG engine
+      await _ingestDocForRag(updated);
     } catch (e) {
       _error = 'Processing failed: $e';
     }
@@ -190,24 +212,29 @@ class DocumentProvider with ChangeNotifier {
       final bytes = await file.readAsBytes();
       String extracted = '';
 
-      if (type == DocType.pdf || type == DocType.docx || type == DocType.pptx) {
-        // Extract printable ASCII/UTF-8 words from binary document stream
+      if (type == DocType.pdf) {
+        try {
+          final document = PdfDocument(inputBytes: bytes);
+          extracted = PdfTextExtractor(document).extractText();
+          document.dispose();
+        } catch (e) {
+          debugPrint('⚠️ Syncfusion PDF extraction failed: $e');
+        }
+      } else if (type == DocType.docx || type == DocType.pptx) {
         final raw = String.fromCharCodes(bytes.where((b) => (b >= 32 && b <= 126) || b == 10 || b == 13 || b == 9));
         final matches = RegExp(r'[A-Za-z0-9\s.,!?:;\-()]{4,}').allMatches(raw);
-        final words = matches
+        extracted = matches
             .map((m) => m.group(0)?.trim() ?? '')
-            .where((s) => s.length > 3 && !s.contains('PDF') && !s.contains('obj') && !s.contains('endobj'))
+            .where((s) => s.length > 3 && !s.contains('obj') && !s.contains('endobj'))
             .take(1000)
             .join(' ');
-
-        if (words.trim().isNotEmpty) {
-          extracted = words;
-        } else {
-          final fileName = path.split('/').last.split('\\').last;
-          extracted = 'Document $fileName successfully imported and ready for offline AI analysis.';
-        }
       } else {
         extracted = String.fromCharCodes(bytes);
+      }
+
+      if (extracted.trim().isEmpty) {
+        final fileName = path.split('/').last.split('\\').last;
+        extracted = 'Document $fileName successfully imported and ready for offline AI analysis.';
       }
 
       return sanitizeText(extracted);
@@ -223,8 +250,8 @@ class DocumentProvider with ChangeNotifier {
 
   List<String> _chunkText(
       String text, {
-        int chunkSize = 500,
-        int overlap = 50,
+        int chunkSize = 150,
+        int overlap = 25,
       }) {
     final words = text.split(RegExp(r'\s+'));
     final chunks = <String>[];
@@ -245,20 +272,46 @@ class DocumentProvider with ChangeNotifier {
   }
 
   // ─────────────────────────────────────────────
-  // Vector RAG & Retrieval Engine
+  // Vector RAG & Retrieval Engine (sqlite-vec + TFLite Embeddings)
   // ─────────────────────────────────────────────
 
   final TFLiteEmbeddingProvider _embeddingProvider = TFLiteEmbeddingProvider();
+  final VectorStorageService _storageService = VectorStorageService();
   bool _ragInitialized = false;
+
+  TFLiteEmbeddingProvider get embeddingProvider => _embeddingProvider;
+  VectorStorageService get storageService => _storageService;
+  bool get isRagReady => _ragInitialized;
 
   Future<void> _ensureRagInitialized() async {
     if (!_ragInitialized) {
       try {
         await _embeddingProvider.initialize();
+        await _storageService.initialize();
         _ragInitialized = true;
       } catch (e) {
         debugPrint('⚠️ Vector RAG init notice: $e');
       }
+    }
+  }
+
+  Future<void> _ingestDocForRag(Document doc) async {
+    if (doc.filePath == null) return;
+    try {
+      await _ensureRagInitialized();
+      final file = File(doc.filePath!);
+      if (await file.exists()) {
+        final ingestion = DocumentIngestionService(_embeddingProvider, _storageService);
+        await ingestion.ingestFile(
+          doc.id.hashCode,
+          file,
+          chunkSizeWords: 150,
+          overlapWords: 25,
+        );
+        debugPrint('✅ Document indexed in native sqlite-vec RAG: ${doc.name}');
+      }
+    } catch (e) {
+      debugPrint('⚠️ RAG ingestion notice: $e');
     }
   }
 
@@ -278,7 +331,26 @@ class DocumentProvider with ChangeNotifier {
     // Ensure provider is initialized asynchronously in background
     _ensureRagInitialized();
 
-    final queryWords = query.toLowerCase().split(RegExp(r'\s+')).where((w) => w.length > 2).toList();
+    final queryLower = query.toLowerCase();
+    final isSummaryRequest = queryLower.contains('summariz') ||
+        queryLower.contains('overview') ||
+        queryLower.contains('about') ||
+        queryLower.contains('explain the doc') ||
+        queryLower.contains('what is this');
+
+    if (isSummaryRequest) {
+      // For general summary requests, take the initial chunks up to max 1800 chars (~400 tokens)
+      final selected = <String>[];
+      int currentLength = 0;
+      for (final chunk in doc.chunks) {
+        if (currentLength + chunk.length > 1800 && selected.isNotEmpty) break;
+        selected.add(chunk);
+        currentLength += chunk.length;
+      }
+      return selected;
+    }
+
+    final queryWords = queryLower.split(RegExp(r'\s+')).where((w) => w.length > 2).toList();
 
     final scored = doc.chunks.map((chunk) {
       final lower = chunk.toLowerCase();
@@ -287,12 +359,21 @@ class DocumentProvider with ChangeNotifier {
       for (final word in queryWords) {
         if (lower.contains(word)) score += 3;
       }
-      if (lower.contains(query.toLowerCase())) score += 10;
+      if (lower.contains(queryLower)) score += 10;
       return MapEntry(chunk, score);
     }).toList();
 
     scored.sort((a, b) => b.value.compareTo(a.value));
-    return scored.take(topK).map((e) => e.key).toList();
+    
+    final selected = <String>[];
+    int currentLength = 0;
+    for (final entry in scored.take(topK)) {
+      if (currentLength + entry.key.length > 1800 && selected.isNotEmpty) break;
+      selected.add(entry.key);
+      currentLength += entry.key.length;
+    }
+
+    return selected;
   }
 
   /// Finds documents relevant to a freeform topic across the whole library

@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import '../../core/theme/colors.dart';
 import '../../core/theme/typography.dart';
 import '../../providers/navigation_provider.dart';
-import '../../providers/session_provider.dart';
 
 // Screens
 import '../screens/home/home_screen.dart';

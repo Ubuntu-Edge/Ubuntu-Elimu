@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
@@ -294,27 +293,16 @@ class LibraryScreen extends StatelessWidget {
     );
   }
 
-  // ================= UPLOAD SIMULATION =================
-  void _simulateUpload(BuildContext context, DocumentProvider provider) {
-    final random = Random();
-
-    final names = [
-      'Anatomy Exam Prep — Q2.pdf',
-      'Calculus Formulas Guide.docx',
-      'Advanced Astrophysics presentation.pptx',
-      'Kiswahili Grammar guide.pdf',
-      'Microeconomics lecture slides.pptx'
-    ];
-
-    final idx = random.nextInt(names.length);
-
-    provider.pickAndUploadDocument();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Uploaded ${names[idx]} successfully'),
-        backgroundColor: UEColors.surface,
-      ),
-    );
+  // ================= UPLOAD DOCUMENT =================
+  void _simulateUpload(BuildContext context, DocumentProvider provider) async {
+    await provider.pickAndUploadDocument();
+    if (context.mounted && provider.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(provider.error!),
+          backgroundColor: UEColors.pdfBg,
+        ),
+      );
+    }
   }
 }
