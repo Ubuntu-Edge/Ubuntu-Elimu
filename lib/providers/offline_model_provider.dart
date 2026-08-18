@@ -41,14 +41,18 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  String? _downloadingModelId;
+
   // Getters
   List<OfflineModel> get models => _models;
   OfflineModel? get activeModel => _activeModel;
+  String? get downloadingModelId => _downloadingModelId;
+  String? get loadedModelId => _denizen.engine.loadedModel?.id ?? _activeModel?.id;
   bool get isContextLoading => _isContextLoading;
   bool get isInferencing => _isInferencing;
   bool get isStreaming => _isStreaming;
   String? get error => _error;
-  bool get hasActiveModel => _activeModel != null;
+  bool get hasActiveModel => _activeModel != null || _denizen.isModelLoaded;
 
   /// Request necessary permissions for offline model loading
   Future<bool> _requestModelLoadingPermissions() async {
@@ -117,37 +121,51 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Set active model (will be loaded into Denizen AI native inference engine)
   Future<void> setActiveModel(OfflineModel model) async {
-    if (_isContextLoading && _activeModel?.id == model.id) return; // Prevent concurrent re-entry for same model
-    _error = null;
+    // Fast-path: if this model is already live in the engine, just record it and done
+    if (_denizen.engine.loadedModel?.id == model.id) {
+      _activeModel = model;
+      _downloadingModelId = null;
+      _isContextLoading = false;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_activeModelKey, model.id);
+      notifyListeners();
+      debugPrint('✅ Model already in engine, no reload needed: ${model.name}');
+      return;
+    }
 
+    _error = null;
+    _downloadingModelId = model.id;
     _isContextLoading = true;
     notifyListeners();
 
     try {
       await WakelockPlus.enable();
-      await _requestModelLoadingPermissions();
 
       // Cleanly unload any existing model from native C++ RAM first to prevent OOM crash
       if (_denizen.isModelLoaded) {
         await _denizen.engine.unloadModel();
       }
 
+      // models.load() handles both: fresh download + memory loading of cached file
       await _denizen.models.load(
         model.id,
         onProgress: (progress) {
           final fraction = progress.progress.clamp(0.0, 1.0);
-          final isDownloaded = fraction >= 0.999;
-          _updateModelProgress(model.id, fraction, isDownloaded);
+          _updateModelProgress(model.id, fraction, fraction >= 0.999);
+        },
+      ).timeout(
+        const Duration(minutes: 5),
+        onTimeout: () {
+          debugPrint('⚠️ models.load timed out after 5 minutes — model may be loading in background');
         },
       );
 
       _activeModel = model;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_activeModelKey, model.id);
-
       _updateModelProgress(model.id, 1.0, true);
       await _saveModelsToPrefs();
-      debugPrint('✅ Model loaded successfully into Denizen AI engine: ${model.name}');
+      debugPrint('✅ Model loaded: ${model.name}');
     } catch (e) {
       _error = 'Error loading model: $e';
       final isAlreadyDownloaded = await _denizen.models.isDownloaded(model.id);
@@ -159,6 +177,7 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
       try {
         await WakelockPlus.disable();
       } catch (_) {}
+      _downloadingModelId = null;
       _isContextLoading = false;
       notifyListeners();
     }
@@ -166,8 +185,6 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Download a model via Denizen AI Model Manager
   Future<void> downloadModel(OfflineModel model) async {
-    _isContextLoading = false;
-    _error = null;
     await setActiveModel(model);
   }
 
@@ -178,6 +195,7 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('Notice on cancelDownload: $e');
     }
+    _downloadingModelId = null;
     _isContextLoading = false;
     _error = null;
     _updateModelProgress(modelId, 0.0, false);

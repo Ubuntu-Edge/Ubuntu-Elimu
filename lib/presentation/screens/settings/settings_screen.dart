@@ -87,9 +87,9 @@ class SettingsScreen extends StatelessWidget {
       OfflineModelProvider modelProvider,
       OfflineModel model,
       ) {
-    final isActive = modelProvider.activeModel?.id == model.id;
-    final isDownloading = !model.isDownloaded && model.downloadProgress > 0;
-    final isLoadingIntoMemory = isActive && modelProvider.isContextLoading;
+    final isActive = (modelProvider.activeModel?.id == model.id) || (modelProvider.loadedModelId == model.id);
+    final isDownloading = modelProvider.downloadingModelId == model.id && !model.isDownloaded && model.downloadProgress < 0.999;
+    final isLoadingIntoMemory = modelProvider.isContextLoading && modelProvider.downloadingModelId == model.id;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -192,17 +192,27 @@ class SettingsScreen extends StatelessWidget {
               children: [
                 Expanded(
                   child: isLoadingIntoMemory
-                      ? Row(
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const SizedBox(
-                              width: 12,
-                              height: 12,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                            Row(
+                              children: [
+                                const SizedBox(
+                                  width: 12,
+                                  height: 12,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Loading into memory…',
+                                  style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(height: 4),
                             Text(
-                              'Loading into memory…',
-                              style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
+                              'This may take 30–120 seconds depending on model size.',
+                              style: UETypography.inter(fontSize: 10, color: UEColors.textMuted),
                             ),
                           ],
                         )
