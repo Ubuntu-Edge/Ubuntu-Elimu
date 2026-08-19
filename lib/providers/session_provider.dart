@@ -9,6 +9,7 @@ class SessionProvider with ChangeNotifier {
   final DenizenAI _denizen = DenizenAI();
   DenizenSession? _activeSession;
   Completer<void>? _activeLock;
+  StreamSubscription<String>? _activeStreamSub;
 
   List<ChatMessage> _chatMessages = [];
   bool _isGenerating = false;
@@ -26,6 +27,16 @@ class SessionProvider with ChangeNotifier {
   String get activeSessionTitle => _activeSessionTitle;
   String get activeSessionMeta => _activeSessionMeta;
   String? get activeDocumentId => _activeDocumentId;
+
+  void stopGeneration() {
+    if (_isGenerating) {
+      _activeStreamSub?.cancel();
+      _activeStreamSub = null;
+      _isGenerating = false;
+      _saveSession();
+      notifyListeners();
+    }
+  }
 
   // ─── Init ────────────────────────────────────────────────────
 
