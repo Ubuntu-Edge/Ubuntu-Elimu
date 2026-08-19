@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'package:denizen_ai/denizen_ai.dart' hide OfflineAIService;
 import '../services/offline_ai_service.dart';
 
