@@ -178,30 +178,14 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
       await WakelockPlus.enable();
       await _requestModelLoadingPermissions();
 
-      // Cleanly unload any existing model from native C++ RAM first to prevent OOM crash
-      if (_denizen.isModelLoaded) {
-        await _denizen.engine.unloadModel();
-      }
-
-      final fullPath = await getModelFullPath(model);
-      if (fullPath != null && await File(fullPath).exists()) {
-        final success = await _denizen.engine.loadModel(
-          modelPath: fullPath,
-          model: model,
-        );
-        if (!success) {
-          throw Exception('Engine failed to initialize model from $fullPath');
-        }
-      } else {
-        await _denizen.models.load(
-          model.id,
-          onProgress: (progress) {
-            final fraction = progress.progress.clamp(0.0, 1.0);
-            final isDownloaded = fraction >= 0.999;
-            _updateModelProgress(model.id, fraction, isDownloaded);
-          },
-        );
-      }
+      await _denizen.models.load(
+        model.id,
+        onProgress: (progress) {
+          final fraction = progress.progress.clamp(0.0, 1.0);
+          final isDownloaded = fraction >= 0.999;
+          _updateModelProgress(model.id, fraction, isDownloaded);
+        },
+      );
 
       _activeModel = model;
       final prefs = await SharedPreferences.getInstance();
