@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
@@ -70,7 +69,7 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Returns available RAM in MB by reading /proc/meminfo (Android only).
   /// Returns -1 if unavailable or not on Android.
-  Future<int> _getAvailableRamMB() async {
+  Future<int> getAvailableRamMB() async {
     try {
       if (Platform.isAndroid) {
         final memInfo = await File('/proc/meminfo').readAsString();
@@ -91,7 +90,7 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
       debugPrint('🚀 Initializing OfflineModelProvider with Denizen AI...');
       final prefs = await SharedPreferences.getInstance();
 
-      final defaultModels = DefaultOfflineModels.getMedicalModels();
+      final defaultModels = DefaultOfflineModels.getEducationModels();
 
       final Map<String, OfflineModel> modelMap = {
         for (final m in defaultModels) m.id: m,

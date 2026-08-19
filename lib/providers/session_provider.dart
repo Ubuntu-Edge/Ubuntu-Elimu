@@ -8,6 +8,7 @@ import 'document_provider.dart';
 class SessionProvider with ChangeNotifier {
   final DenizenAI _denizen = DenizenAI();
   DenizenSession? _activeSession;
+  Completer<void>? _activeLock;
 
   List<ChatMessage> _chatMessages = [];
   bool _isGenerating = false;
@@ -167,6 +168,14 @@ class SessionProvider with ChangeNotifier {
     _chatMessages.add(aiMsg);
     notifyListeners();
 
+    // Wait in line if a message is currently generating
+    while (_activeLock != null) {
+      await _activeLock!.future;
+    }
+
+    final currentLock = Completer<void>();
+    _activeLock = currentLock;
+
     try {
       // Check model is loaded
       if (!_denizen.isModelLoaded) {
@@ -207,6 +216,8 @@ class SessionProvider with ChangeNotifier {
       _isGenerating = false;
       _saveSession();
       notifyListeners();
+      _activeLock = null;
+      currentLock.complete();
     }
   }
 

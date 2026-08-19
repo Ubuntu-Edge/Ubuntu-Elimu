@@ -14,6 +14,20 @@ class OfflineAIService {
 
   final DenizenAI _denizen = DenizenAI();
 
+  // ─── Local Vector RAG Engine ─────────────────────────────────
+  final TFLiteEmbeddingProvider _embeddingProvider = TFLiteEmbeddingProvider();
+  final VectorStorageService _storageService = VectorStorageService();
+  late final DocumentIngestionService _ingestionService =
+      DocumentIngestionService(_embeddingProvider, _storageService);
+  bool _isRagInitialized = false;
+
+  Completer<void>? _activeLock;
+
+  TFLiteEmbeddingProvider get embeddingProvider => _embeddingProvider;
+  VectorStorageService get storageService => _storageService;
+  DocumentIngestionService get ingestionService => _ingestionService;
+  bool get isRagInitialized => _isRagInitialized;
+
   bool get isModelLoaded => _denizen.isModelLoaded;
   OfflineModel? get loadedModel => _denizen.engine.loadedModel;
   String? get loadedModelPath => _denizen.engine.loadedModelPath;
@@ -21,7 +35,21 @@ class OfflineAIService {
   // ─── Lifecycle ───────────────────────────────────────────────
 
   Future<void> initialize() async {
-    // Engine initializes lazily when models are loaded via DenizenAI SDK
+    await initializeRag();
+  }
+
+  Future<void> initializeRag() async {
+    if (_isRagInitialized) return;
+    try {
+      await _embeddingProvider.initialize();
+      if (!_storageService.isInitialized) {
+        await _storageService.initialize();
+      }
+      _isRagInitialized = true;
+      debugPrint('✅ OfflineAIService TFLite RAG Engine initialized successfully!');
+    } catch (e) {
+      debugPrint('⚠️ OfflineAIService RAG init notice: $e');
+    }
   }
 
   Future<bool> loadModel({
@@ -55,15 +83,27 @@ class OfflineAIService {
       throw Exception('No GGUF AI model loaded. Please activate a model in Settings.');
     }
 
-    final session = _denizen.createSession(
-      systemPrompt: systemPrompt,
-      maxTokens: maxTokens,
-    );
+    // Wait for active generation lock (FIFO sequence lock)
+    while (_activeLock != null) {
+      await _activeLock!.future;
+    }
+    final currentLock = Completer<void>();
+    _activeLock = currentLock;
 
-    final stream = session.streamChat(prompt);
+    try {
+      final session = _denizen.createSession(
+        systemPrompt: systemPrompt,
+        maxTokens: maxTokens,
+      );
 
-    await for (final token in stream) {
-      yield token;
+      final stream = session.streamChat(prompt);
+
+      await for (final token in stream) {
+        yield token;
+      }
+    } finally {
+      _activeLock = null;
+      currentLock.complete();
     }
   }
 

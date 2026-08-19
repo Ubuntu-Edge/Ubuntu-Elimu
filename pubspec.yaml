@@ -43,7 +43,7 @@ dependencies:
   wakelock_plus: ^1.2.8
   # Denizen AI SDK (Offline AI Engine)
   denizen_ai:
-    path: ../offline_ai_architecture
+    path: ..
 
   # UI
   google_fonts: ^6.2.1
@@ -76,6 +76,8 @@ flutter:
 
   assets:
     - assets/icons/
+    - assets/models/
+
 
 
 

@@ -260,7 +260,7 @@ packages:
   denizen_ai:
     dependency: "direct main"
     description:
-      path: "../offline_ai_architecture"
+      path: ".."
       relative: true
     source: path
     version: "0.0.1"
@@ -578,7 +578,7 @@ packages:
   llama_flutter_android:
     dependency: transitive
     description:
-      path: "../offline_ai_architecture/packages/llama_flutter_android"
+      path: "../packages/llama_flutter_android"
       relative: true
     source: path
     version: "0.1.4"

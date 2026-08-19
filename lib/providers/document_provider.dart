@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'package:denizen_ai/denizen_ai.dart';
+import '../services/offline_ai_service.dart';
 
 import '../models/document.dart';
 
@@ -52,6 +53,7 @@ class DocumentProvider with ChangeNotifier {
   Future<void> init() async {
     _documentBox = await Hive.openBox('documents');
     _loadFromHive();
+    _ensureRagInitialized();
   }
 
   void _loadFromHive() {
@@ -275,24 +277,12 @@ class DocumentProvider with ChangeNotifier {
   // Vector RAG & Retrieval Engine (sqlite-vec + TFLite Embeddings)
   // ─────────────────────────────────────────────
 
-  final TFLiteEmbeddingProvider _embeddingProvider = TFLiteEmbeddingProvider();
-  final VectorStorageService _storageService = VectorStorageService();
-  bool _ragInitialized = false;
-
-  TFLiteEmbeddingProvider get embeddingProvider => _embeddingProvider;
-  VectorStorageService get storageService => _storageService;
-  bool get isRagReady => _ragInitialized;
+  TFLiteEmbeddingProvider get embeddingProvider => OfflineAIService.instance.embeddingProvider;
+  VectorStorageService get storageService => OfflineAIService.instance.storageService;
+  bool get isRagReady => OfflineAIService.instance.isRagInitialized;
 
   Future<void> _ensureRagInitialized() async {
-    if (!_ragInitialized) {
-      try {
-        await _embeddingProvider.initialize();
-        await _storageService.initialize();
-        _ragInitialized = true;
-      } catch (e) {
-        debugPrint('⚠️ Vector RAG init notice: $e');
-      }
-    }
+    await OfflineAIService.instance.initializeRag();
   }
 
   Future<void> _ingestDocForRag(Document doc) async {

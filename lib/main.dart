@@ -2,20 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:denizen_ai/denizen_ai.dart' hide OfflineAIService;
+import 'package:denizen_ai/denizen_ai.dart';
 import 'presentation/navigation/main_shell.dart';
 import 'providers/navigation_provider.dart';
 import 'providers/session_provider.dart';
 import 'providers/document_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/offline_model_provider.dart';
-import 'services/offline_ai_service.dart';
 
 void main() async {
   // 1. Ensure plugin services are native-bound
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 2. Ensure Flutter binding and storage
+  // 2. Configure Denizen AI SDK engine
+  DenizenAI.configure(
+    edgeConfig: const UbuntuEdgeConfig(
+      enableCloudFallback: false,
+      enableOtaModelUpdates: true,
+    ),
+  );
+
+  // 3. Ensure Flutter binding and storage
   await Hive.initFlutter();
   await SharedPreferences.getInstance();
 
