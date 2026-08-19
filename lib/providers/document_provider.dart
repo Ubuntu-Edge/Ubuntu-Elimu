@@ -18,14 +18,15 @@ class _ExtractTaskArgs {
 
 class _ExtractTaskResult {
   final String text;
+  final List<String> chunks;
   final int? pageCount;
-  _ExtractTaskResult(this.text, this.pageCount);
+  _ExtractTaskResult(this.text, this.chunks, this.pageCount);
 }
 
 _ExtractTaskResult _isolateExtractTask(_ExtractTaskArgs args) {
   try {
     final file = File(args.path);
-    if (!file.existsSync()) return _ExtractTaskResult('', null);
+    if (!file.existsSync()) return _ExtractTaskResult('', [], null);
 
     final bytes = file.readAsBytesSync();
     String text = '';
@@ -82,10 +83,26 @@ _ExtractTaskResult _isolateExtractTask(_ExtractTaskArgs args) {
     }
 
     final sanitized = DocumentProvider.sanitizeText(text);
-    return _ExtractTaskResult(sanitized, null);
+
+    // Fast isolate chunking (capped at max 100 chunks for instant non-hanging performance)
+    final words = sanitized.split(RegExp(r'\s+'));
+    final List<String> chunks = [];
+    int start = 0;
+    const chunkSize = 150;
+    const overlap = 25;
+
+    while (start < words.length) {
+      final end = (start + chunkSize).clamp(0, words.length);
+      chunks.add(words.sublist(start, end).join(' '));
+      if (end == words.length) break;
+      start += chunkSize - overlap;
+      if (chunks.length >= 100) break; // Match example app performance cap
+    }
+
+    return _ExtractTaskResult(sanitized, chunks, null);
   } catch (e) {
     debugPrint('Fast extraction error: $e');
-    return _ExtractTaskResult('', null);
+    return _ExtractTaskResult('', [], null);
   }
 }
 
@@ -236,7 +253,7 @@ class DocumentProvider with ChangeNotifier {
         return;
       }
 
-      final chunks = _chunkText(rawText);
+      final chunks = res.chunks;
 
       final updated = doc.copyWith(
         extractedText: rawText,
