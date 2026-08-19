@@ -281,6 +281,21 @@ class _TutorScreenState extends State<TutorScreen> {
             ],
           ),
           const Spacer(),
+          // New Chat button
+          IconButton(
+            onPressed: () {
+              context.read<SessionProvider>().startNewSession();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Started new AI Tutor session'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+            icon: const Icon(TablerIcons.plus, size: 20, color: UEColors.indigo),
+            tooltip: 'New Chat Session',
+          ),
+          const SizedBox(width: 4),
           // Language selection chip button
           GestureDetector(
             onTap: () => LanguageSheet.show(

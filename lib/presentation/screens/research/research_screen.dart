@@ -176,10 +176,10 @@ class _ResearchScreenState extends State<ResearchScreen> {
 
     final systemPrompt = groundedContext.isNotEmpty
         ? 'You are a brilliant research assistant. Provide thorough, well-structured, '
-            'accurate answers formatted in clear markdown. Ground your response in the '
+            'accurate answers formatted in clear markdown. Always match and respond in the exact language of the user prompt (e.g. Swahili, French, English). Ground your response in the '
             'following study documents:\n\n$groundedContext'
         : 'You are a brilliant research assistant. Provide thorough, well-structured, '
-            'accurate, and engaging answers formatted in clear markdown for the user.';
+            'accurate, and engaging answers formatted in clear markdown. Always match and respond fluently in the exact language of the user prompt (e.g. Swahili, French, English).';
 
     try {
       final stream = OfflineAIService.instance.generateResponseStream(
