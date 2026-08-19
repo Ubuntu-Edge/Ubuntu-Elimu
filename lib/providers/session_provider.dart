@@ -168,16 +168,18 @@ class SessionProvider with ChangeNotifier {
     _chatMessages.add(aiMsg);
     notifyListeners();
 
-    // Wait in line if a message is currently generating
     while (_activeLock != null) {
       await _activeLock!.future;
     }
 
+    await _processMessage(text, socratic, docProvider, language);
+  }
+
+  Future<void> _processMessage(String text, bool socratic, DocumentProvider docProvider, String language) async {
     final currentLock = Completer<void>();
     _activeLock = currentLock;
 
     try {
-      // Check model is loaded
       if (!_denizen.isModelLoaded) {
         _updateLastMessage(
           'No model loaded. Please go to Settings to download and activate a model first.',
@@ -187,13 +189,11 @@ class SessionProvider with ChangeNotifier {
         return;
       }
 
-      // Get relevant chunks if a document is selected
       List<String> chunks = [];
       if (_activeDocumentId != null) {
         chunks = docProvider.getRelevantChunks(_activeDocumentId!, text);
       }
 
-      // Ensure session is configured with current Socratic/Language/Chunk settings
       _rebuildDenizenSession(
         socratic: socratic,
         language: language,
@@ -201,26 +201,42 @@ class SessionProvider with ChangeNotifier {
         docProvider: docProvider,
       );
 
-      // Stream response via DenizenSession
       final stream = _activeSession!.streamChat(
         text,
         directChunks: chunks.isNotEmpty ? chunks : null,
       );
       final buffer = StringBuffer();
 
-      await for (final token in stream) {
-        buffer.write(token);
-        _updateLastMessage(buffer.toString());
-      }
+      await _activeStreamSub?.cancel();
+      _activeStreamSub = stream.listen(
+        (token) {
+          buffer.write(token);
+          _updateLastMessage(buffer.toString());
+        },
+        onError: (e) {
+          debugPrint('❌ Tutor streaming error: $e');
+          _updateLastMessage('Sorry, an error occurred during inference: $e');
+          _isGenerating = false;
+          _saveSession();
+          notifyListeners();
+          if (!currentLock.isCompleted) currentLock.complete();
+        },
+        onDone: () {
+          _isGenerating = false;
+          _saveSession();
+          notifyListeners();
+          _activeLock = null;
+          if (!currentLock.isCompleted) currentLock.complete();
+        },
+      );
     } catch (e) {
       debugPrint('❌ Tutor streaming error: $e');
       _updateLastMessage('Sorry, an error occurred during inference: $e');
-    } finally {
       _isGenerating = false;
       _saveSession();
       notifyListeners();
       _activeLock = null;
-      currentLock.complete();
+      if (!currentLock.isCompleted) currentLock.complete();
     }
   }
 

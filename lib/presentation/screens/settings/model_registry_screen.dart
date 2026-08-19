@@ -378,12 +378,9 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
                           const SizedBox(width: 8),
                           GestureDetector(
                             onTap: () async {
-                              await _denizen.models.deleteModel(model.id);
+                              final provider = Provider.of<OfflineModelProvider>(context, listen: false);
+                              await provider.deleteModel(model);
                               await _checkDownloadedModels();
-                              if (context.mounted) {
-                                final provider = Provider.of<OfflineModelProvider>(context, listen: false);
-                                await provider.initialize();
-                              }
                             },
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),

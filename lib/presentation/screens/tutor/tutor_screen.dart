@@ -227,6 +227,7 @@ class _TutorScreenState extends State<TutorScreen> {
             ),
             ChatInputBar(
               onSend: (text) => _handleSend(session, docs, settings.socraticMode, text),
+              onStop: () => session.stopGeneration(),
               isTyping: session.isGenerating,
             ),
           ],

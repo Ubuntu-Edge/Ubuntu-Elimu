@@ -291,21 +291,28 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _saveModels() async {
-    final prefs = await SharedPreferences.getInstance();
-    final modelsJson = _models.map((m) => jsonEncode(m.toJson())).toList();
-    await prefs.setStringList(_modelsKey, modelsJson);
+    await _saveModelsToPrefs();
   }
 
   Future<void> deleteModel(OfflineModel model) async {
-    await _denizen.models.deleteModel(model.id);
+    try {
+      await _denizen.models.deleteModel(model.id);
+    } catch (e) {
+      debugPrint('Notice deleting model file: $e');
+    }
     _updateModelProgress(model.id, 0.0, false, path: null);
 
     if (_activeModel?.id == model.id) {
       _activeModel = null;
-      await _denizen.engine.unloadModel();
+      try {
+        await _denizen.engine.unloadModel();
+      } catch (_) {}
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_activeModelKey);
     }
 
-    await _saveModels();
+    await _saveModelsToPrefs();
+    notifyListeners();
   }
 
   /// Total disk space used by downloaded models, in bytes

@@ -5,11 +5,13 @@ import '../../../../core/theme/typography.dart';
 
 class ChatInputBar extends StatefulWidget {
   final ValueChanged<String> onSend;
+  final VoidCallback? onStop;
   final bool isTyping;
 
   const ChatInputBar({
     super.key,
     required this.onSend,
+    this.onStop,
     this.isTyping = false,
   });
 
@@ -143,20 +145,23 @@ class _ChatInputBarState extends State<ChatInputBar> {
               height: 36,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: _hasText && !widget.isTyping
-                    ? UEColors.indigo
-                    : UEColors.bgBorder,
+                color: widget.isTyping
+                    ? Colors.redAccent.withOpacity(0.85)
+                    : _hasText
+                        ? UEColors.indigo
+                        : UEColors.bgBorder,
               ),
               child: IconButton(
                 padding: EdgeInsets.zero,
-                onPressed: _hasText && !widget.isTyping ? _send : null,
+                onPressed: widget.isTyping ? widget.onStop : (_hasText ? _send : null),
                 icon: Icon(
-                  Icons.arrow_upward_rounded,
-                  size: 18,
-                  color: _hasText && !widget.isTyping
+                  widget.isTyping ? Icons.stop_rounded : Icons.arrow_upward_rounded,
+                  size: widget.isTyping ? 20 : 18,
+                  color: widget.isTyping || _hasText
                       ? Colors.white
                       : UEColors.textDim,
                 ),
+                tooltip: widget.isTyping ? 'Stop Generation' : 'Send Message',
               ),
             ),
           ],
