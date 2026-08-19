@@ -183,14 +183,25 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
         await _denizen.engine.unloadModel();
       }
 
-      await _denizen.models.load(
-        model.id,
-        onProgress: (progress) {
-          final fraction = progress.progress.clamp(0.0, 1.0);
-          final isDownloaded = fraction >= 0.999;
-          _updateModelProgress(model.id, fraction, isDownloaded);
-        },
-      );
+      final fullPath = await getModelFullPath(model);
+      if (fullPath != null && await File(fullPath).exists()) {
+        final success = await _denizen.engine.loadModel(
+          modelPath: fullPath,
+          model: model,
+        );
+        if (!success) {
+          throw Exception('Engine failed to initialize model from $fullPath');
+        }
+      } else {
+        await _denizen.models.load(
+          model.id,
+          onProgress: (progress) {
+            final fraction = progress.progress.clamp(0.0, 1.0);
+            final isDownloaded = fraction >= 0.999;
+            _updateModelProgress(model.id, fraction, isDownloaded);
+          },
+        );
+      }
 
       _activeModel = model;
       final prefs = await SharedPreferences.getInstance();
@@ -270,6 +281,17 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
     final storageDir = await ModelDownloadService.instance.getModelStorageDirectory();
     final path = '${storageDir.path}/models/${model.author}/${model.filename}';
     if (await File(path).exists()) return path;
+
+    if (model.filename != null) {
+      for (final altPath in [
+        '/data/local/tmp/${model.filename}',
+        '/sdcard/Download/${model.filename}',
+        '/storage/emulated/0/Download/${model.filename}',
+      ]) {
+        if (await File(altPath).exists()) return altPath;
+      }
+    }
+
     return null;
   }
 
