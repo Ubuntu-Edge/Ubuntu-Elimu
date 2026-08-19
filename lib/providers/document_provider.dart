@@ -218,9 +218,29 @@ class DocumentProvider with ChangeNotifier {
         try {
           final document = PdfDocument(inputBytes: bytes);
           extracted = PdfTextExtractor(document).extractText();
+          if (extracted.trim().isEmpty) {
+            final pageBuffer = StringBuffer();
+            for (int i = 0; i < document.pages.count; i++) {
+              final pText = PdfTextExtractor(document).extractText(startPageIndex: i);
+              if (pText.trim().isNotEmpty) {
+                pageBuffer.writeln(pText);
+              }
+            }
+            extracted = pageBuffer.toString();
+          }
           document.dispose();
         } catch (e) {
           debugPrint('⚠️ Syncfusion PDF extraction failed: $e');
+        }
+
+        if (extracted.trim().isEmpty) {
+          final raw = String.fromCharCodes(bytes.where((b) => (b >= 32 && b <= 126) || b == 10 || b == 13 || b == 9));
+          final matches = RegExp(r'[A-Za-z0-9\s.,!?:;\-()]{4,}').allMatches(raw);
+          extracted = matches
+              .map((m) => m.group(0)?.trim() ?? '')
+              .where((s) => s.length > 3 && !s.contains('obj') && !s.contains('endobj') && !s.contains('stream'))
+              .take(1500)
+              .join(' ');
         }
       } else if (type == DocType.docx || type == DocType.pptx) {
         final raw = String.fromCharCodes(bytes.where((b) => (b >= 32 && b <= 126) || b == 10 || b == 13 || b == 9));
@@ -228,7 +248,7 @@ class DocumentProvider with ChangeNotifier {
         extracted = matches
             .map((m) => m.group(0)?.trim() ?? '')
             .where((s) => s.length > 3 && !s.contains('obj') && !s.contains('endobj'))
-            .take(1000)
+            .take(1500)
             .join(' ');
       } else {
         extracted = String.fromCharCodes(bytes);
@@ -236,7 +256,7 @@ class DocumentProvider with ChangeNotifier {
 
       if (extracted.trim().isEmpty) {
         final fileName = path.split('/').last.split('\\').last;
-        extracted = 'Document $fileName successfully imported and ready for offline AI analysis.';
+        extracted = 'Document titled "$fileName". Study material imported into Ubuntu Elimu.';
       }
 
       return sanitizeText(extracted);

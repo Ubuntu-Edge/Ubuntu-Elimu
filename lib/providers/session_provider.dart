@@ -51,7 +51,7 @@ class SessionProvider with ChangeNotifier {
     }
 
     final systemPrompt = socratic
-        ? 'You are an expert Socratic tutor for Ubuntu Elimu. You guide students step-by-step through questions instead of directly giving answers. Encourage critical thinking, be patient, and respond in $language.$context'
+        ? 'You are an expert academic tutor for Ubuntu Elimu. Help the student understand their document and study topics clearly. Be encouraging, patient, and respond in $language.$context'
         : 'You are a direct, clear study assistant for Ubuntu Elimu. Answer questions plainly with worked examples where helpful. Be encouraging, concise, and respond in $language.$context';
 
     if (docProvider != null && docProvider.isRagReady) {
@@ -202,7 +202,10 @@ class SessionProvider with ChangeNotifier {
       );
 
       // Stream response via DenizenSession
-      final stream = _activeSession!.streamChat(text);
+      final stream = _activeSession!.streamChat(
+        text,
+        directChunks: chunks.isNotEmpty ? chunks : null,
+      );
       final buffer = StringBuffer();
 
       await for (final token in stream) {
