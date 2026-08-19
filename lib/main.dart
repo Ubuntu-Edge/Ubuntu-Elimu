@@ -17,6 +17,7 @@ void main() async {
   // 2. Configure Denizen AI SDK engine
   DenizenAI.configure(
     edgeConfig: const UbuntuEdgeConfig(
+      apiKey: 'ue-ubuntu-elimu-dev',
       enableCloudFallback: false,
       enableOtaModelUpdates: true,
     ),
