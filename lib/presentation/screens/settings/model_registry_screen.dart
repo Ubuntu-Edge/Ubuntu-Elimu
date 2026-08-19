@@ -63,7 +63,6 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
   }
 
   Future<void> _downloadAndLoadModel(OfflineModel model) async {
-    final provider = Provider.of<OfflineModelProvider>(context, listen: false);
     setState(() {
       _downloadingModelId = model.id;
       _downloadProgress = 0.0;
@@ -75,7 +74,21 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
         await Permission.notification.request();
       }
 
-      await provider.setActiveModel(model);
+      await _denizen.models.load(
+        model.id,
+        onProgress: (progress) {
+          if (mounted) {
+            setState(() {
+              _downloadProgress = progress.progress.clamp(0.0, 1.0);
+              _statusText =
+                  'Downloading: ${(progress.bytesDownloaded / (1024 * 1024)).toStringAsFixed(1)} MB / ${(progress.totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB (${progress.percent.toStringAsFixed(1)}%)';
+            });
+          }
+        },
+      );
+
+      final provider = Provider.of<OfflineModelProvider>(context, listen: false);
+      await provider.initialize();
       await _checkDownloadedModels();
 
       if (mounted) {
@@ -86,7 +99,7 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✅ ${model.name} successfully activated for live on-device AI!'),
+            content: Text('✅ ${model.name} successfully activated!'),
             backgroundColor: UEColors.green,
             duration: const Duration(seconds: 4),
           ),
