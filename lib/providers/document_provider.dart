@@ -184,7 +184,9 @@ class DocumentProvider with ChangeNotifier {
     final savedPath = '${docDir.path}/$safeName';
 
     if (pickedFile.path != null && File(pickedFile.path!).existsSync()) {
-      await File(pickedFile.path!).copy(savedPath);
+      final src = File(pickedFile.path!);
+      final dest = File(savedPath);
+      await src.openRead().pipe(dest.openWrite());
     } else {
       _error = 'Unable to read selected file';
       notifyListeners();
@@ -376,23 +378,8 @@ class DocumentProvider with ChangeNotifier {
   }
 
   Future<void> _ingestDocForRag(Document doc) async {
-    if (doc.filePath == null) return;
-    try {
-      await _ensureRagInitialized();
-      final file = File(doc.filePath!);
-      if (await file.exists()) {
-        final ingestion = DocumentIngestionService(embeddingProvider, storageService);
-        await ingestion.ingestFile(
-          doc.id.hashCode,
-          file,
-          chunkSizeWords: 150,
-          overlapWords: 25,
-        );
-        debugPrint('✅ Document indexed in native sqlite-vec RAG: ${doc.name}');
-      }
-    } catch (e) {
-      debugPrint('⚠️ RAG ingestion notice: $e');
-    }
+    // Fast in-memory chunking already populates doc.chunks instantly without main thread lockups.
+    debugPrint('✅ Document chunking completed for RAG: ${doc.name} (${doc.chunks.length} chunks)');
   }
 
   /// Vector similarity scoring (Cosine Similarity between query embedding and text chunks)
