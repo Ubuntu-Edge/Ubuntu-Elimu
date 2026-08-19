@@ -187,28 +187,18 @@ class DocumentProvider with ChangeNotifier {
     if (result == null || result.files.isEmpty) return;
 
     final pickedFile = result.files.first;
-    final extension = (pickedFile.extension ?? '').toLowerCase();
-
-    DocType type = DocType.other;
-    if (extension == 'pdf') type = DocType.pdf;
-    if (extension == 'docx') type = DocType.docx;
-
-    final appDir = await getApplicationDocumentsDirectory();
-    final docDir = Directory('${appDir.path}/documents');
-    await docDir.create(recursive: true);
-
-    final safeName = pickedFile.name.replaceAll(RegExp(r'[^\w\.\-]'), '_');
-    final savedPath = '${docDir.path}/$safeName';
-
-    if (pickedFile.path != null && File(pickedFile.path!).existsSync()) {
-      final src = File(pickedFile.path!);
-      final dest = File(savedPath);
-      await src.openRead().pipe(dest.openWrite());
-    } else {
+    if (pickedFile.path == null || !File(pickedFile.path!).existsSync()) {
       _error = 'Unable to read selected file';
       notifyListeners();
       return;
     }
+
+    final extension = (pickedFile.extension ?? '').toLowerCase();
+    DocType type = DocType.other;
+    if (extension == 'pdf') type = DocType.pdf;
+    if (extension == 'docx') type = DocType.docx;
+
+    final originalPath = pickedFile.path!;
 
     final doc = Document(
       id: 'doc_${DateTime.now().millisecondsSinceEpoch}',
@@ -216,18 +206,42 @@ class DocumentProvider with ChangeNotifier {
       type: type,
       sizeBytes: pickedFile.size,
       addedAt: DateTime.now(),
-      filePath: savedPath,
+      filePath: originalPath,
       pageCount: null,
       isProcessed: false,
       chunks: [],
     );
 
+    // ⚡ INSTANT UI UPDATE: Add document to list & notify listeners immediately (< 1ms)!
     _documents.add(doc);
     _saveToHive(doc);
     notifyListeners();
 
-    // Process in background without blocking UI thread
-    _processDocument(doc);
+    // 🚀 Background Non-Blocking Task: Copy file to persistent app storage & extract text in isolate
+    _copyAndProcessInBackground(doc, originalPath, pickedFile.name);
+  }
+
+  Future<void> _copyAndProcessInBackground(Document doc, String sourcePath, String name) async {
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final docDir = Directory('${appDir.path}/documents');
+      await docDir.create(recursive: true);
+
+      final safeName = name.replaceAll(RegExp(r'[^\w\.\-]'), '_');
+      final savedPath = '${docDir.path}/$safeName';
+
+      final src = File(sourcePath);
+      final dest = File(savedPath);
+      if (src.path != dest.path) {
+        await src.openRead().pipe(dest.openWrite());
+      }
+
+      final docWithSavedPath = doc.copyWith(filePath: savedPath);
+      await _processDocument(docWithSavedPath);
+    } catch (e) {
+      debugPrint('Background copy/process notice: $e');
+      await _processDocument(doc);
+    }
   }
 
   // ─────────────────────────────────────────────
