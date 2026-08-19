@@ -63,35 +63,19 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
   }
 
   Future<void> _downloadAndLoadModel(OfflineModel model) async {
+    final provider = Provider.of<OfflineModelProvider>(context, listen: false);
     setState(() {
       _downloadingModelId = model.id;
       _downloadProgress = 0.0;
-      _statusText = 'Preparing model for ${model.name}...';
+      _statusText = 'Preparing ${model.name}...';
     });
 
     try {
       if (Platform.isAndroid && await Permission.notification.isDenied) {
         await Permission.notification.request();
       }
-      await WakelockPlus.enable();
 
-      if (_denizen.isModelLoaded) {
-        await _denizen.engine.unloadModel();
-      }
-
-      await _denizen.models.load(
-        model.id,
-        onProgress: (progress) {
-          if (mounted) {
-            setState(() {
-              _downloadProgress = progress.progress.clamp(0.0, 1.0);
-              _statusText =
-                  'Downloading: ${(progress.bytesDownloaded / (1024 * 1024)).toStringAsFixed(1)} MB / ${(progress.totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB (${progress.percent.toStringAsFixed(1)}%)';
-            });
-          }
-        },
-      );
-
+      await provider.setActiveModel(model);
       await _checkDownloadedModels();
 
       if (mounted) {
@@ -99,9 +83,6 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
           _downloadingModelId = null;
           _statusText = '✅ ${model.name} loaded into neural memory!';
         });
-
-        final provider = Provider.of<OfflineModelProvider>(context, listen: false);
-        await provider.initialize();
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
