@@ -28,60 +28,63 @@ _ExtractTaskResult _isolateExtractTask(_ExtractTaskArgs args) {
     if (!file.existsSync()) return _ExtractTaskResult('', null);
 
     final bytes = file.readAsBytesSync();
-    String extracted = '';
-    int? pageCount;
+    String text = '';
+    final ext = args.path.split('.').last.toLowerCase();
 
-    final type = DocType.values[args.typeIndex];
-
-    if (type == DocType.pdf) {
-      try {
-        final document = PdfDocument(inputBytes: bytes);
-        pageCount = document.pages.count;
-        extracted = PdfTextExtractor(document).extractText();
-        if (extracted.trim().isEmpty) {
-          final pageBuffer = StringBuffer();
-          for (int i = 0; i < document.pages.count; i++) {
-            final pText = PdfTextExtractor(document).extractText(startPageIndex: i);
-            if (pText.trim().isNotEmpty) {
-              pageBuffer.writeln(pText);
-            }
-          }
-          extracted = pageBuffer.toString();
+    if (ext == 'pdf') {
+      final raw = String.fromCharCodes(bytes);
+      final sb = StringBuffer();
+      final tjRegex = RegExp(r'\(([^)]+)\)\s*Tj');
+      for (final m in tjRegex.allMatches(raw)) {
+        final g = m.group(1);
+        if (g != null && g.trim().length > 1) {
+          sb.writeln(g.trim());
         }
-        document.dispose();
-      } catch (e) {
-        debugPrint('⚠️ Isolate PDF extraction notice: $e');
       }
-
-      if (extracted.trim().isEmpty) {
-        final raw = String.fromCharCodes(bytes.where((b) => (b >= 32 && b <= 126) || b == 10 || b == 13 || b == 9));
-        final matches = RegExp(r'[A-Za-z0-9\s.,!?:;\-()]{4,}').allMatches(raw);
-        extracted = matches
-            .map((m) => m.group(0)?.trim() ?? '')
-            .where((s) => s.length > 3 && !s.contains('obj') && !s.contains('endobj') && !s.contains('stream'))
-            .take(1500)
-            .join(' ');
+      if (sb.length < 50) {
+        final asciiRegex = RegExp(r"[A-Za-z0-9\s.,!?:;()'-]{4,}");
+        for (final m in asciiRegex.allMatches(raw)) {
+          final s = m.group(0)!.trim();
+          if (s.length >= 4 &&
+              !s.startsWith('/Font') &&
+              !s.startsWith('/Type') &&
+              !s.startsWith('/Catalog') &&
+              !s.startsWith('/Pages')) {
+            sb.writeln(s);
+          }
+        }
       }
-    } else if (type == DocType.docx || type == DocType.pptx) {
-      final raw = String.fromCharCodes(bytes.where((b) => (b >= 32 && b <= 126) || b == 10 || b == 13 || b == 9));
-      final matches = RegExp(r'[A-Za-z0-9\s.,!?:;\-()]{4,}').allMatches(raw);
-      extracted = matches
-          .map((m) => m.group(0)?.trim() ?? '')
-          .where((s) => s.length > 3 && !s.contains('obj') && !s.contains('endobj'))
-          .take(1500)
-          .join(' ');
+      text = sb.toString();
     } else {
-      extracted = String.fromCharCodes(bytes);
+      try {
+        text = String.fromCharCodes(bytes).trim();
+      } catch (_) {
+        final raw = String.fromCharCodes(bytes);
+        final sb = StringBuffer();
+        final asciiRegex = RegExp(r"[A-Za-z0-9\s.,!?:;()'-]{4,}");
+        for (final m in asciiRegex.allMatches(raw)) {
+          final s = m.group(0)!.trim();
+          if (s.length >= 4 &&
+              !s.startsWith('/Font') &&
+              !s.startsWith('/Type') &&
+              !s.startsWith('/Catalog') &&
+              !s.startsWith('/Pages')) {
+            sb.writeln(s);
+          }
+        }
+        text = sb.toString();
+      }
     }
 
-    if (extracted.trim().isEmpty) {
+    if (text.trim().isEmpty) {
       final fileName = args.path.split('/').last.split('\\').last;
-      extracted = 'Document titled "$fileName". Study material imported into Ubuntu Elimu.';
+      text = 'Document titled "$fileName". Study material imported into Ubuntu Elimu.';
     }
 
-    return _ExtractTaskResult(DocumentProvider.sanitizeText(extracted), pageCount);
+    final sanitized = DocumentProvider.sanitizeText(text);
+    return _ExtractTaskResult(sanitized, null);
   } catch (e) {
-    debugPrint('Isolate extraction error: $e');
+    debugPrint('Fast extraction error: $e');
     return _ExtractTaskResult('', null);
   }
 }
