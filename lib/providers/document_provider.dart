@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -8,6 +9,82 @@ import 'package:denizen_ai/denizen_ai.dart' hide OfflineAIService;
 import '../services/offline_ai_service.dart';
 
 import '../models/document.dart';
+
+class _ExtractTaskArgs {
+  final String path;
+  final int typeIndex;
+  _ExtractTaskArgs(this.path, this.typeIndex);
+}
+
+class _ExtractTaskResult {
+  final String text;
+  final int? pageCount;
+  _ExtractTaskResult(this.text, this.pageCount);
+}
+
+_ExtractTaskResult _isolateExtractTask(_ExtractTaskArgs args) {
+  try {
+    final file = File(args.path);
+    if (!file.existsSync()) return _ExtractTaskResult('', null);
+
+    final bytes = file.readAsBytesSync();
+    String extracted = '';
+    int? pageCount;
+
+    final type = DocType.values[args.typeIndex];
+
+    if (type == DocType.pdf) {
+      try {
+        final document = PdfDocument(inputBytes: bytes);
+        pageCount = document.pages.count;
+        extracted = PdfTextExtractor(document).extractText();
+        if (extracted.trim().isEmpty) {
+          final pageBuffer = StringBuffer();
+          for (int i = 0; i < document.pages.count; i++) {
+            final pText = PdfTextExtractor(document).extractText(startPageIndex: i);
+            if (pText.trim().isNotEmpty) {
+              pageBuffer.writeln(pText);
+            }
+          }
+          extracted = pageBuffer.toString();
+        }
+        document.dispose();
+      } catch (e) {
+        debugPrint('⚠️ Isolate PDF extraction notice: $e');
+      }
+
+      if (extracted.trim().isEmpty) {
+        final raw = String.fromCharCodes(bytes.where((b) => (b >= 32 && b <= 126) || b == 10 || b == 13 || b == 9));
+        final matches = RegExp(r'[A-Za-z0-9\s.,!?:;\-()]{4,}').allMatches(raw);
+        extracted = matches
+            .map((m) => m.group(0)?.trim() ?? '')
+            .where((s) => s.length > 3 && !s.contains('obj') && !s.contains('endobj') && !s.contains('stream'))
+            .take(1500)
+            .join(' ');
+      }
+    } else if (type == DocType.docx || type == DocType.pptx) {
+      final raw = String.fromCharCodes(bytes.where((b) => (b >= 32 && b <= 126) || b == 10 || b == 13 || b == 9));
+      final matches = RegExp(r'[A-Za-z0-9\s.,!?:;\-()]{4,}').allMatches(raw);
+      extracted = matches
+          .map((m) => m.group(0)?.trim() ?? '')
+          .where((s) => s.length > 3 && !s.contains('obj') && !s.contains('endobj'))
+          .take(1500)
+          .join(' ');
+    } else {
+      extracted = String.fromCharCodes(bytes);
+    }
+
+    if (extracted.trim().isEmpty) {
+      final fileName = args.path.split('/').last.split('\\').last;
+      extracted = 'Document titled "$fileName". Study material imported into Ubuntu Elimu.';
+    }
+
+    return _ExtractTaskResult(DocumentProvider.sanitizeText(extracted), pageCount);
+  } catch (e) {
+    debugPrint('Isolate extraction error: $e');
+    return _ExtractTaskResult('', null);
+  }
+}
 
 class DocumentProvider with ChangeNotifier {
   List<Document> _documents = [];
@@ -84,7 +161,7 @@ class DocumentProvider with ChangeNotifier {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'docx', 'txt'],
-      withData: true,
+      withData: false,
     );
 
     if (result == null || result.files.isEmpty) return;
@@ -96,35 +173,19 @@ class DocumentProvider with ChangeNotifier {
     if (extension == 'pdf') type = DocType.pdf;
     if (extension == 'docx') type = DocType.docx;
 
-    // Save locally to persistent app storage
     final appDir = await getApplicationDocumentsDirectory();
     final docDir = Directory('${appDir.path}/documents');
     await docDir.create(recursive: true);
 
     final safeName = pickedFile.name.replaceAll(RegExp(r'[^\w\.\-]'), '_');
     final savedPath = '${docDir.path}/$safeName';
-    final savedFile = File(savedPath);
 
     if (pickedFile.path != null && File(pickedFile.path!).existsSync()) {
       await File(pickedFile.path!).copy(savedPath);
-    } else if (pickedFile.bytes != null && pickedFile.bytes!.isNotEmpty) {
-      await savedFile.writeAsBytes(pickedFile.bytes!);
     } else {
       _error = 'Unable to read selected file';
       notifyListeners();
       return;
-    }
-
-    int? pageCount;
-    if (type == DocType.pdf) {
-      try {
-        final pdfBytes = await savedFile.readAsBytes();
-        final pdfDoc = PdfDocument(inputBytes: pdfBytes);
-        pageCount = pdfDoc.pages.count;
-        pdfDoc.dispose();
-      } catch (e) {
-        debugPrint('⚠️ Could not determine PDF page count: $e');
-      }
     }
 
     final doc = Document(
@@ -134,7 +195,7 @@ class DocumentProvider with ChangeNotifier {
       sizeBytes: pickedFile.size,
       addedAt: DateTime.now(),
       filePath: savedPath,
-      pageCount: pageCount,
+      pageCount: null,
       isProcessed: false,
       chunks: [],
     );
@@ -157,7 +218,12 @@ class DocumentProvider with ChangeNotifier {
     _setLoading(true);
 
     try {
-      final rawText = await _extractText(doc.filePath!, doc.type);
+      final res = await compute(
+        _isolateExtractTask,
+        _ExtractTaskArgs(doc.filePath!, doc.type.index),
+      );
+
+      final rawText = res.text;
 
       if (rawText.isEmpty) {
         _error = 'Could not extract text from ${doc.name}';
@@ -170,6 +236,7 @@ class DocumentProvider with ChangeNotifier {
       final updated = doc.copyWith(
         extractedText: rawText,
         chunks: chunks,
+        pageCount: res.pageCount ?? doc.pageCount,
         isProcessed: true,
       );
 
