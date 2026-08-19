@@ -9,6 +9,7 @@ import 'widgets/document_card.dart';
 
 // NEW: AI workspace screen (you will implement next)
 import 'document_workspace_screen.dart';
+import 'widgets/file_action_sheet.dart';
 
 class LibraryScreen extends StatelessWidget {
   const LibraryScreen({super.key});
@@ -173,7 +174,7 @@ class LibraryScreen extends StatelessWidget {
     );
   }
 
-  // ================= DOCUMENT ACTIONS (AI CORE) =================
+  // ================= DOCUMENT ACTIONS =================
   void _showDocumentActions(BuildContext context, doc) {
     showModalBottomSheet(
       context: context,
@@ -181,93 +182,7 @@ class LibraryScreen extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (_) {
-        return Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                doc.name,
-                style: UETypography.inter(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: UEColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              _actionButton(
-                icon: TablerIcons.sparkles,
-                label: "Summarize Content",
-                onTap: () {
-                  Navigator.pop(context);
-                  _runAI(context, doc, "summary");
-                },
-              ),
-
-              _actionButton(
-                icon: TablerIcons.calendar,
-                label: "Generate Study Plan",
-                onTap: () {
-                  Navigator.pop(context);
-                  _runAI(context, doc, "study_plan");
-                },
-              ),
-
-              _actionButton(
-                icon: TablerIcons.cards,
-                label: "Create Flashcards",
-                onTap: () {
-                  Navigator.pop(context);
-                  _runAI(context, doc, "flashcards");
-                },
-              ),
-
-              _actionButton(
-                icon: TablerIcons.book,
-                label: "Open Learning View",
-                onTap: () {
-                  Navigator.pop(context);
-                  _openDocumentWorkspace(context, doc);
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  // ================= ACTION BUTTON =================
-  Widget _actionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return ListTile(
-      leading: Icon(icon, color: UEColors.accent, size: 18),
-      title: Text(
-        label,
-        style: UETypography.inter(
-          fontSize: 12,
-          color: UEColors.textPrimary,
-        ),
-      ),
-      onTap: onTap,
-    );
-  }
-
-  // ================= AI PROCESSING =================
-  void _runAI(BuildContext context, doc, String mode) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => DocumentWorkspaceScreen(
-          document: doc,
-          mode: mode,
-        ),
-      ),
+      builder: (_) => FileActionSheet(doc: doc),
     );
   }
 
