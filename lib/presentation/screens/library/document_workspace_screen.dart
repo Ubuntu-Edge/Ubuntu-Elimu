@@ -41,16 +41,19 @@ class _DocumentWorkspaceScreenState extends State<DocumentWorkspaceScreen>
 
     _tabController = TabController(length: 4, vsync: this);
 
-    // Auto-open based on mode
+    // Auto-open based on mode and auto-trigger AI generation
     switch (widget.mode) {
       case "summary":
         _tabController.index = 1;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _generateSummary());
         break;
       case "study_plan":
         _tabController.index = 2;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _generatePlan());
         break;
       case "flashcards":
         _tabController.index = 3;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _generateFlashcards());
         break;
       default:
         _tabController.index = 0;

@@ -258,26 +258,17 @@ class LibraryScreen extends StatelessWidget {
     );
   }
 
-  // ================= AI PROCESSING (MOCK) =================
+  // ================= AI PROCESSING =================
   void _runAI(BuildContext context, doc, String mode) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("Processing ${doc.name} → $mode"),
-        backgroundColor: UEColors.surface,
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DocumentWorkspaceScreen(
+          document: doc,
+          mode: mode,
+        ),
       ),
     );
-
-    Future.delayed(const Duration(seconds: 2), () {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => DocumentWorkspaceScreen(
-            document: doc,
-            mode: mode,
-          ),
-        ),
-      );
-    });
   }
 
   // ================= OPEN WORKSPACE =================

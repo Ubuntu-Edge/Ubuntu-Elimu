@@ -8,6 +8,7 @@ import '../../../../models/document.dart';
 import '../../../../providers/document_provider.dart';
 import '../../../../providers/session_provider.dart';
 import '../../../../providers/navigation_provider.dart';
+import '../document_workspace_screen.dart';
 
 class FileActionSheet extends StatelessWidget {
   final Document doc;
@@ -68,16 +69,51 @@ class FileActionSheet extends StatelessWidget {
               label: 'Set as Socratic Context',
               color: UEColors.accent,
               onTap: () {
-                sessionProvider.updateActiveSession(
-                  doc.name,
-                  '${doc.sizeLabel} · Socratic Context Active',
-                );
+                sessionProvider.setActiveDocument(doc.id, doc.name);
                 Navigator.pop(context);
                 navProvider.setIndex(2); // switch to tutor
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text('Socratic tutor loaded with: ${doc.name}'),
                     backgroundColor: UEColors.surface,
+                  ),
+                );
+              },
+            ),
+
+            // Summarize action
+            _buildOption(
+              icon: TablerIcons.sparkles,
+              label: 'Summarize Content with AI',
+              color: UEColors.accent,
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => DocumentWorkspaceScreen(
+                      document: doc,
+                      mode: 'summary',
+                    ),
+                  ),
+                );
+              },
+            ),
+
+            // Flashcards action
+            _buildOption(
+              icon: TablerIcons.cards,
+              label: 'Generate Flashcards with AI',
+              color: UEColors.accent,
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => DocumentWorkspaceScreen(
+                      document: doc,
+                      mode: 'flashcards',
+                    ),
                   ),
                 );
               },
