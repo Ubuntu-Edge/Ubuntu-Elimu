@@ -133,7 +133,7 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
         }
       }
 
-      _models = modelMap.values.toList();
+      _models = modelMap.values.where((m) => m.id != 'smollm2-360m-q4').toList();
       await _autoDetectDownloadedModels();
 
       // Verify if a model is actually live in native C++ memory
