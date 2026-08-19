@@ -4,7 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
-import 'package:denizen_ai/denizen_ai.dart';
+import 'package:denizen_ai/denizen_ai.dart' hide OfflineAIService;
 import '../services/offline_ai_service.dart';
 
 import '../models/document.dart';
@@ -291,7 +291,7 @@ class DocumentProvider with ChangeNotifier {
       await _ensureRagInitialized();
       final file = File(doc.filePath!);
       if (await file.exists()) {
-        final ingestion = DocumentIngestionService(_embeddingProvider, _storageService);
+        final ingestion = DocumentIngestionService(embeddingProvider, storageService);
         await ingestion.ingestFile(
           doc.id.hashCode,
           file,
