@@ -63,6 +63,22 @@ class FileActionSheet extends StatelessWidget {
               child: Divider(color: UEColors.border, height: 0.5),
             ),
 
+            // Open & Read action
+            _buildOption(
+              icon: TablerIcons.book,
+              label: 'Open & Read Document',
+              color: UEColors.accent,
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => DocumentWorkspaceScreen(document: doc),
+                  ),
+                );
+              },
+            ),
+
             // Use in Tutor action
             _buildOption(
               icon: TablerIcons.brain,
@@ -76,44 +92,6 @@ class FileActionSheet extends StatelessWidget {
                   SnackBar(
                     content: Text('Socratic tutor loaded with: ${doc.name}'),
                     backgroundColor: UEColors.surface,
-                  ),
-                );
-              },
-            ),
-
-            // Summarize action
-            _buildOption(
-              icon: TablerIcons.sparkles,
-              label: 'Summarize Content with AI',
-              color: UEColors.accent,
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => DocumentWorkspaceScreen(
-                      document: doc,
-                      mode: 'summary',
-                    ),
-                  ),
-                );
-              },
-            ),
-
-            // Flashcards action
-            _buildOption(
-              icon: TablerIcons.cards,
-              label: 'Generate Flashcards with AI',
-              color: UEColors.accent,
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => DocumentWorkspaceScreen(
-                      document: doc,
-                      mode: 'flashcards',
-                    ),
                   ),
                 );
               },

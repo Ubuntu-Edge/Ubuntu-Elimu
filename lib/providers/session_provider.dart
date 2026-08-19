@@ -60,7 +60,7 @@ class SessionProvider with ChangeNotifier {
           embeddingProvider: docProvider.embeddingProvider,
           storageService: docProvider.storageService,
           baseSystemPrompt: systemPrompt,
-          maxTokens: 1024,
+          maxTokens: 2048,
         );
         return;
       } catch (e) {
@@ -70,7 +70,7 @@ class SessionProvider with ChangeNotifier {
 
     _activeSession = _denizen.createSession(
       systemPrompt: systemPrompt,
-      maxTokens: 1024,
+      maxTokens: 2048,
     );
   }
 

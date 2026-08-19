@@ -143,8 +143,8 @@ class DocumentProvider with ChangeNotifier {
     _saveToHive(doc);
     notifyListeners();
 
-    // Process asynchronously
-    await _processDocument(doc);
+    // Process in background without blocking UI thread
+    _processDocument(doc);
   }
 
   // ─────────────────────────────────────────────
@@ -179,8 +179,8 @@ class DocumentProvider with ChangeNotifier {
       _saveToHive(updated);
       notifyListeners();
 
-      // Index in background for native offline sqlite-vec RAG engine
-      await _ingestDocForRag(updated);
+      // Index asynchronously in background for offline sqlite-vec RAG engine
+      _ingestDocForRag(updated).catchError((e) => debugPrint('Background RAG notice: $e'));
     } catch (e) {
       _error = 'Processing failed: $e';
     }
