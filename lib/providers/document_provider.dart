@@ -328,11 +328,11 @@ class DocumentProvider with ChangeNotifier {
   }
 
   /// Vector similarity scoring (Cosine Similarity between query embedding and text chunks)
-  List<String> getRelevantChunks(
+  Future<List<String>> getRelevantChunks(
     String docId,
     String query, {
     int topK = 3,
-  }) {
+  }) async {
     final doc = _documents.firstWhere(
       (d) => d.id == docId,
       orElse: () => throw Exception('Document not found'),
@@ -366,7 +366,7 @@ class DocumentProvider with ChangeNotifier {
     if (isRagReady && embeddingProvider != null && storageService != null) {
       try {
         final int numericDocId = int.tryParse(docId) ?? doc.id.hashCode.abs();
-        final queryVector = embeddingProvider!.embed(query);
+        final queryVector = await embeddingProvider!.embed(query);
         final vectorResults = storageService!.search(queryVector, limit: topK * 2);
 
         final retrieved = <String>[];
