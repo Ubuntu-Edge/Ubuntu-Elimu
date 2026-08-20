@@ -58,30 +58,16 @@ class SessionProvider with ChangeNotifier {
     if (contextChunks != null && contextChunks.isNotEmpty) {
       final joined = contextChunks.join('\n---\n');
       final safeJoined = joined.length > 1800 ? joined.substring(0, 1800) : joined;
-      context = '\n\n[DOCUMENT KNOWLEDGE BASE]:\n$safeJoined\n';
+      context = '\n\n[DOCUMENT KNOWLEDGE BASE]:\n$safeJoined\n\n[INSTRUCTION]: Base your answers on the above document content. Be helpful, concise, and accurate.';
     }
 
     final systemPrompt = socratic
-        ? 'You are an expert academic tutor for Ubuntu Elimu. Help the student understand their document and study topics clearly. Be encouraging, patient, and respond in $language.$context'
-        : 'You are a direct, clear study assistant for Ubuntu Elimu. Answer questions plainly with worked examples where helpful. Be encouraging, concise, and respond in $language.$context';
-
-    if (docProvider != null && docProvider.isRagReady) {
-      try {
-        _activeSession = _denizen.createRagSession(
-          embeddingProvider: docProvider.embeddingProvider,
-          storageService: docProvider.storageService,
-          baseSystemPrompt: systemPrompt,
-          maxTokens: 2048,
-        );
-        return;
-      } catch (e) {
-        debugPrint('Notice on createRagSession fallback: $e');
-      }
-    }
+        ? 'You are an expert academic tutor for Ubuntu Elimu. Help the student understand their document and study topics clearly. Be encouraging, patient, concise, and respond in $language.$context'
+        : 'You are a direct, clear study assistant for Ubuntu Elimu. Answer questions directly using the provided document knowledge base. Be concise, clear, and respond in $language.$context';
 
     _activeSession = _denizen.createSession(
       systemPrompt: systemPrompt,
-      maxTokens: 2048,
+      maxTokens: 512,
     );
   }
 
@@ -223,10 +209,7 @@ class SessionProvider with ChangeNotifier {
         docProvider: docProvider,
       );
 
-      final stream = _activeSession!.streamChat(
-        text,
-        directChunks: chunks.isNotEmpty ? chunks : null,
-      );
+      final stream = _activeSession!.streamChat(text);
       final buffer = StringBuffer();
 
       await _activeStreamSub?.cancel();

@@ -374,13 +374,20 @@ class DocumentProvider with ChangeNotifier {
   }
 
   List<String> _lexicalFallback(List<String> chunks, String query, int topK) {
+    if (chunks.isEmpty) return [];
     final queryLower = query.toLowerCase();
     final queryWords = queryLower.split(RegExp(r'\s+')).where((w) => w.length > 2).toList();
 
     final isSummaryRequest = queryLower.contains('summariz') ||
+        queryLower.contains('summaris') ||
+        queryLower.contains('summary') ||
         queryLower.contains('overview') ||
         queryLower.contains('about') ||
-        queryLower.contains('what is this');
+        queryLower.contains('what is this') ||
+        queryLower.contains('tell me') ||
+        queryLower.contains('explain') ||
+        queryLower.contains('cv') ||
+        queryLower.contains('resume');
 
     if (isSummaryRequest) {
       return _capByLength(chunks);
@@ -397,8 +404,12 @@ class DocumentProvider with ChangeNotifier {
     }).toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
-    final selected = scored.take(topK).map((e) => e.key).toList();
-    return selected.isEmpty ? _capByLength(chunks.take(topK).toList()) : _capByLength(selected);
+    final matched = scored.where((e) => e.value > 0).map((e) => e.key).take(topK).toList();
+    if (matched.isNotEmpty) {
+      return _capByLength(matched);
+    }
+    // If no keyword matches, return initial chunks so the model always has document grounding
+    return _capByLength(chunks.take(topK).toList());
   }
 
   List<String> _capByLength(List<String> chunks, {int maxChars = 1800}) {
