@@ -362,6 +362,34 @@ class DocumentProvider with ChangeNotifier {
       return selected;
     }
 
+    // Try real vector similarity search via sqlite-vec first
+    if (isRagReady && embeddingProvider != null && storageService != null) {
+      try {
+        final int numericDocId = int.tryParse(docId) ?? doc.id.hashCode.abs();
+        final queryVector = embeddingProvider!.embed(query);
+        final vectorResults = storageService!.search(queryVector, limit: topK * 2);
+
+        final retrieved = <String>[];
+        for (final item in vectorResults) {
+          final text = item['text_content'] as String?;
+          final itemDocId = item['doc_id'];
+          if (text != null && text.isNotEmpty) {
+            if (itemDocId == numericDocId || itemDocId.toString() == docId || vectorResults.length <= topK) {
+              retrieved.add(text);
+            }
+          }
+          if (retrieved.length >= topK) break;
+        }
+
+        if (retrieved.isNotEmpty) {
+          debugPrint('🎯 RAG Vector Search retrieved ${retrieved.length} semantically relevant chunks');
+          return retrieved;
+        }
+      } catch (e) {
+        debugPrint('⚠️ Vector search fallback to hybrid keyword match: $e');
+      }
+    }
+
     final queryWords = queryLower.split(RegExp(r'\s+')).where((w) => w.length > 2).toList();
 
     final scored = doc.chunks.map((chunk) {
@@ -369,23 +397,19 @@ class DocumentProvider with ChangeNotifier {
       // Hybrid scoring: word frequency + phrase relevance
       int score = 0;
       for (final word in queryWords) {
-        if (lower.contains(word)) score += 3;
+        if (lower.contains(word)) score += 2;
       }
-      if (lower.contains(queryLower)) score += 10;
       return MapEntry(chunk, score);
     }).toList();
 
     scored.sort((a, b) => b.value.compareTo(a.value));
-    
-    final selected = <String>[];
-    int currentLength = 0;
-    for (final entry in scored.take(topK)) {
-      if (currentLength + entry.key.length > 1800 && selected.isNotEmpty) break;
-      selected.add(entry.key);
-      currentLength += entry.key.length;
+
+    // Fallback: If no matches, return first chunks
+    if (scored.isEmpty || scored.first.value == 0) {
+      return doc.chunks.take(topK).toList();
     }
 
-    return selected;
+    return scored.take(topK).map((e) => e.key).toList();
   }
 
   /// Finds documents relevant to a freeform topic across the whole library
