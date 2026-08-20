@@ -252,6 +252,18 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
             final isDownloadedOnDisk = _downloadedModelIds.contains(model.id);
             final requiredRamMB = (model.sizeMB * 2.5).ceil();
 
+            final String categoryBadge = model.id.contains('0.5b')
+                ? '⚡ ULTRA-LIGHTWEIGHT'
+                : model.id.contains('gemma') || model.id.contains('1b') || model.id.contains('1.5b')
+                    ? '🎯 RAG & REASONING'
+                    : '🧠 HIGH-END EDGE';
+
+            final Color badgeColor = model.id.contains('0.5b')
+                ? UEColors.accent
+                : model.id.contains('gemma') || model.id.contains('1b') || model.id.contains('1.5b')
+                    ? const Color(0xFF059669)
+                    : const Color(0xFF8B5CF6);
+
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(16.0),
@@ -266,6 +278,24 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          color: badgeColor.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: badgeColor.withOpacity(0.4), width: 0.5),
+                        ),
+                        child: Text(
+                          categoryBadge,
+                          style: UETypography.inter(fontSize: 9, fontWeight: FontWeight.w700, color: badgeColor),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                   Row(
                     children: [
                       Icon(
