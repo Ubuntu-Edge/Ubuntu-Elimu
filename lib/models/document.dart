@@ -1,16 +1,17 @@
 enum DocType { pdf, pptx, docx, image, other }
 
 extension DocTypeExt on DocType {
-  String get name {
-    switch (this) {
-      case DocType.pdf:   return 'pdf';
-      case DocType.pptx:  return 'pptx';
-      case DocType.docx:  return 'docx';
-      case DocType.image: return 'image';
-      case DocType.other: return 'other';
-    }
-  }
+  // NOTE: no custom `name` getter here on purpose. Dart enums have had a
+  // built-in `.name` instance member since 2.15 (DocType.image.name ==
+  // 'image'), and instance members always win over extension members with
+  // the same name — so a `name` getter on this extension would be silently
+  // unreachable. Use the built-in `doc.type.name` wherever you need the
+  // raw identifier (e.g. for filter-key comparisons); use `.extension`
+  // below only for the display badge text.
 
+  /// Display-only badge text (e.g. shown in a document card / chip).
+  /// Do NOT use this for category-filter comparisons — it doesn't map
+  /// 1:1 to the enum's own identifiers (IMG != image, FILE != other).
   String get extension {
     switch (this) {
       case DocType.pdf:   return 'PDF';
@@ -39,15 +40,17 @@ class Document {
   final int sizeBytes;
   final DateTime addedAt;
 
-  // ── existing optional fields ──────────────────────────────
   final int? pageCount;
   final int? flashcardCount;
+  final String? filePath;
+  final String? extractedText;
+  final List<String> chunks;
+  final bool isProcessed;
 
-  // ── new fields ────────────────────────────────────────────
-  final String? filePath;       // absolute path on device storage
-  final String? extractedText;  // full raw text after extraction
-  final List<String> chunks;    // 500-word segments for AI prompts
-  final bool isProcessed;       // true once extraction is complete
+  /// True once every chunk has been embedded and upserted into sqlite-vec.
+  /// Distinct from isProcessed (text extracted + chunked — always fast)
+  /// vs isIndexed (vectors computed — may be deferred on low-tier devices).
+  final bool isIndexed;
 
   const Document({
     required this.id,
@@ -61,9 +64,9 @@ class Document {
     this.extractedText,
     this.chunks = const [],
     this.isProcessed = false,
+    this.isIndexed = false,
   });
 
-  // ── human-readable file size ──────────────────────────────
   String get sizeLabel {
     if (sizeBytes < 1024 * 1024) {
       return '${(sizeBytes / 1024).toStringAsFixed(1)} KB';
@@ -71,15 +74,14 @@ class Document {
     return '${(sizeBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
-  // ── quick status label for UI ─────────────────────────────
   String get processingStatus {
     if (filePath == null) return 'Not imported';
     if (!isProcessed) return 'Processing...';
     if (chunks.isEmpty) return 'No text found';
+    if (isIndexed) return '${chunks.length} chunks indexed';
     return '${chunks.length} chunks ready';
   }
 
-  // ── copyWith — used after extraction completes ────────────
   Document copyWith({
     String? id,
     String? name,
@@ -92,56 +94,57 @@ class Document {
     String? extractedText,
     List<String>? chunks,
     bool? isProcessed,
+    bool? isIndexed,
   }) {
     return Document(
-      id:            id            ?? this.id,
-      name:          name          ?? this.name,
-      type:          type          ?? this.type,
-      sizeBytes:     sizeBytes     ?? this.sizeBytes,
-      addedAt:       addedAt       ?? this.addedAt,
-      pageCount:     pageCount     ?? this.pageCount,
+      id:             id             ?? this.id,
+      name:           name           ?? this.name,
+      type:           type           ?? this.type,
+      sizeBytes:      sizeBytes      ?? this.sizeBytes,
+      addedAt:        addedAt        ?? this.addedAt,
+      pageCount:      pageCount      ?? this.pageCount,
       flashcardCount: flashcardCount ?? this.flashcardCount,
-      filePath:      filePath      ?? this.filePath,
-      extractedText: extractedText ?? this.extractedText,
-      chunks:        chunks        ?? this.chunks,
-      isProcessed:   isProcessed   ?? this.isProcessed,
+      filePath:       filePath       ?? this.filePath,
+      extractedText:  extractedText  ?? this.extractedText,
+      chunks:         chunks         ?? this.chunks,
+      isProcessed:    isProcessed    ?? this.isProcessed,
+      isIndexed:      isIndexed      ?? this.isIndexed,
     );
   }
 
-  // ── Hive persistence ──────────────────────────────────────
   Map<String, dynamic> toMap() {
     return {
-      'id':            id,
-      'name':          name,
-      'type':          type.extension,
-      'sizeBytes':     sizeBytes,
-      'addedAt':       addedAt.toIso8601String(),
-      'pageCount':     pageCount,
+      'id':             id,
+      'name':           name,
+      'type':           type.extension,
+      'sizeBytes':      sizeBytes,
+      'addedAt':        addedAt.toIso8601String(),
+      'pageCount':      pageCount,
       'flashcardCount': flashcardCount,
-      'filePath':      filePath,
-      'extractedText': extractedText,
-      'chunks':        chunks,
-      'isProcessed':   isProcessed,
+      'filePath':       filePath,
+      'extractedText':  extractedText,
+      'chunks':         chunks,
+      'isProcessed':    isProcessed,
+      'isIndexed':      isIndexed,
     };
   }
 
   factory Document.fromMap(Map<String, dynamic> map) {
-    // Safe int parser — Hive can return num/double on some Android versions
-    int _safeInt(dynamic v, [int fallback = 0]) {
+    int safeInt(dynamic v, [int fallback = 0]) {
       if (v == null) return fallback;
       if (v is int) return v;
       if (v is double) return v.toInt();
       return int.tryParse(v.toString()) ?? fallback;
     }
 
-    int? _safeIntNullable(dynamic v) {
+    int? safeIntNullable(dynamic v) {
       if (v == null) return null;
       if (v is int) return v;
       if (v is double) return v.toInt();
       return int.tryParse(v.toString());
     }
 
-    DateTime _safeDate(dynamic v) {
+    DateTime safeDate(dynamic v) {
       try {
         return DateTime.parse(v as String);
       } catch (_) {
@@ -153,14 +156,15 @@ class Document {
       id:             (map['id'] ?? '').toString(),
       name:           (map['name'] ?? 'Untitled').toString(),
       type:           DocTypeExt.fromString((map['type'] ?? 'other').toString()),
-      sizeBytes:      _safeInt(map['sizeBytes']),
-      addedAt:        _safeDate(map['addedAt']),
-      pageCount:      _safeIntNullable(map['pageCount']),
-      flashcardCount: _safeIntNullable(map['flashcardCount']),
+      sizeBytes:      safeInt(map['sizeBytes']),
+      addedAt:        safeDate(map['addedAt']),
+      pageCount:      safeIntNullable(map['pageCount']),
+      flashcardCount: safeIntNullable(map['flashcardCount']),
       filePath:       map['filePath']?.toString(),
       extractedText:  map['extractedText']?.toString(),
       chunks:         List<String>.from((map['chunks'] ?? []).map((e) => e?.toString() ?? '')),
       isProcessed:    map['isProcessed'] == true,
+      isIndexed:      map['isIndexed'] == true,
     );
   }
 }

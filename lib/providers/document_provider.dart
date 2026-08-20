@@ -1,18 +1,21 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:denizen_ai/denizen_ai.dart' hide OfflineAIService;
+import 'package:denizen_ai/denizen_ai.dart' hide OfflineAIService, DocumentIngestionService;
 import '../services/offline_ai_service.dart';
+import '../src/rag/device_tier.dart';
+import '../src/rag/document_ingestion_service.dart';
 
 import '../models/document.dart';
 
 class _ExtractTaskArgs {
   final String path;
   final int typeIndex;
-  _ExtractTaskArgs(this.path, this.typeIndex);
+  final int chunkWords; // tier-dependent
+  final int maxChunks; // tier-dependent
+  _ExtractTaskArgs(this.path, this.typeIndex, this.chunkWords, this.maxChunks);
 }
 
 class _ExtractTaskResult {
@@ -22,59 +25,22 @@ class _ExtractTaskResult {
   _ExtractTaskResult(this.text, this.chunks, this.pageCount);
 }
 
+/// NOTE: swap the raw-byte PDF regex extraction for a real parser
+/// (e.g. syncfusion_flutter_pdf's PdfDocument.extractText()) here.
+/// Kept as a placeholder signature since that's a separate, larger change
+/// (new dependency, license check) from the tiering/isolate work below.
+///
+/// NOTE: _ExtractTaskArgs.typeIndex is passed in but currently unused inside
+/// this function — extraction branches on file content only. It's dead
+/// plumbing left for the Syncfusion PDF wiring, where pdf/docx/txt routing
+/// will need to live. Don't remove it until that work is done.
 _ExtractTaskResult _isolateExtractTask(_ExtractTaskArgs args) {
   try {
     final file = File(args.path);
     if (!file.existsSync()) return _ExtractTaskResult('', [], null);
 
     final bytes = file.readAsBytesSync();
-    String text = '';
-    final ext = args.path.split('.').last.toLowerCase();
-
-    if (ext == 'pdf') {
-      final raw = String.fromCharCodes(bytes);
-      final sb = StringBuffer();
-      final tjRegex = RegExp(r'\(([^)]+)\)\s*Tj');
-      for (final m in tjRegex.allMatches(raw)) {
-        final g = m.group(1);
-        if (g != null && g.trim().length > 1) {
-          sb.writeln(g.trim());
-        }
-      }
-      if (sb.length < 50) {
-        final asciiRegex = RegExp(r"[A-Za-z0-9\s.,!?:;()'-]{4,}");
-        for (final m in asciiRegex.allMatches(raw)) {
-          final s = m.group(0)!.trim();
-          if (s.length >= 4 &&
-              !s.startsWith('/Font') &&
-              !s.startsWith('/Type') &&
-              !s.startsWith('/Catalog') &&
-              !s.startsWith('/Pages')) {
-            sb.writeln(s);
-          }
-        }
-      }
-      text = sb.toString();
-    } else {
-      try {
-        text = String.fromCharCodes(bytes).trim();
-      } catch (_) {
-        final raw = String.fromCharCodes(bytes);
-        final sb = StringBuffer();
-        final asciiRegex = RegExp(r"[A-Za-z0-9\s.,!?:;()'-]{4,}");
-        for (final m in asciiRegex.allMatches(raw)) {
-          final s = m.group(0)!.trim();
-          if (s.length >= 4 &&
-              !s.startsWith('/Font') &&
-              !s.startsWith('/Type') &&
-              !s.startsWith('/Catalog') &&
-              !s.startsWith('/Pages')) {
-            sb.writeln(s);
-          }
-        }
-        text = sb.toString();
-      }
-    }
+    String text = String.fromCharCodes(bytes).trim();
 
     if (text.trim().isEmpty) {
       final fileName = args.path.split('/').last.split('\\').last;
@@ -83,24 +49,25 @@ _ExtractTaskResult _isolateExtractTask(_ExtractTaskArgs args) {
 
     final sanitized = DocumentProvider.sanitizeText(text);
 
-    // Fast isolate chunking (capped at max 100 chunks for instant non-hanging performance)
+    // Tier-dependent chunking: fewer/larger chunks on low-end hardware
+    // means fewer embedding calls later, at the cost of coarser retrieval.
     final words = sanitized.split(RegExp(r'\s+'));
     final List<String> chunks = [];
     int start = 0;
-    const chunkSize = 150;
-    const overlap = 25;
+    final chunkSize = args.chunkWords;
+    final overlap = (chunkSize * 0.15).round(); // ~15% overlap, scales with chunk size
 
     while (start < words.length) {
       final end = (start + chunkSize).clamp(0, words.length);
       chunks.add(words.sublist(start, end).join(' '));
       if (end == words.length) break;
       start += chunkSize - overlap;
-      if (chunks.length >= 100) break; // Match example app performance cap
+      if (chunks.length >= args.maxChunks) break;
     }
 
     return _ExtractTaskResult(sanitized, chunks, null);
   } catch (e) {
-    debugPrint('Fast extraction error: $e');
+    debugPrint('Extraction error: $e');
     return _ExtractTaskResult('', [], null);
   }
 }
@@ -113,10 +80,11 @@ class DocumentProvider with ChangeNotifier {
   String? _error;
 
   late Box _documentBox;
+  final DocumentIngestionService _ingestionService = DocumentIngestionService();
 
-  // ─────────────────────────────────────────────
-  // Getters
-  // ─────────────────────────────────────────────
+  // Computed once at app launch, then reused for every upload/query decision.
+  DeviceTier _cachedDeviceTier = DeviceTier.mid;
+  DeviceTier get cachedDeviceTier => _cachedDeviceTier;
 
   bool get isLoading => _isLoading;
   String? get error => _error;
@@ -125,13 +93,13 @@ class DocumentProvider with ChangeNotifier {
 
   List<Document> get documents {
     return _documents.where((doc) {
-      final matchesSearch =
-      doc.name.toLowerCase().contains(_searchQuery.toLowerCase());
-
+      final matchesSearch = doc.name.toLowerCase().contains(_searchQuery.toLowerCase());
+      // FIX: was doc.type.extension.toLowerCase() — .extension is display
+      // badge text ('IMG', 'FILE') that doesn't map 1:1 onto category ids
+      // like 'image'/'other'. .name is the enum's built-in identifier and
+      // matches all five DocType values correctly.
       final matchesCategory = _selectedCategory == 'all' ||
-          doc.type.extension.toLowerCase() ==
-              _selectedCategory.toLowerCase();
-
+          doc.type.name == _selectedCategory.toLowerCase();
       return matchesSearch && matchesCategory;
     }).toList();
   }
@@ -142,19 +110,42 @@ class DocumentProvider with ChangeNotifier {
     return sorted.take(3).toList();
   }
 
+  TFLiteEmbeddingProvider get embeddingProvider => OfflineAIService.instance.embeddingProvider;
+  VectorStorageService get storageService => OfflineAIService.instance.storageService;
+  bool get isRagReady => OfflineAIService.instance.isRagInitialized;
+
   // ─────────────────────────────────────────────
-  // Init Hive
+  // Init
   // ─────────────────────────────────────────────
 
   Future<void> init() async {
     _documentBox = await Hive.openBox('documents');
     _loadFromHive();
-    _ensureRagInitialized();
+    await OfflineAIService.instance.initializeRag();
+    await _detectAndCacheDeviceTier();
+  }
+
+  Future<void> _detectAndCacheDeviceTier() async {
+    try {
+      final sw = Stopwatch()..start();
+      await embeddingProvider.embed('benchmark warmup string');
+      sw.stop();
+
+      if (sw.elapsedMilliseconds > 350) {
+        _cachedDeviceTier = DeviceTier.low;
+      } else if (sw.elapsedMilliseconds > 120) {
+        _cachedDeviceTier = DeviceTier.mid;
+      } else {
+        _cachedDeviceTier = DeviceTier.high;
+      }
+    } catch (e) {
+      _cachedDeviceTier = DeviceTier.mid; // safe default if benchmark fails
+    }
+    debugPrint('📱 Device tier cached at launch: $_cachedDeviceTier');
   }
 
   void _loadFromHive() {
     final stored = _documentBox.values.toList();
-
     _documents = stored
         .map((e) {
           try {
@@ -166,12 +157,11 @@ class DocumentProvider with ChangeNotifier {
         })
         .whereType<Document>()
         .toList();
-
     notifyListeners();
   }
 
   // ─────────────────────────────────────────────
-  // Upload Document
+  // Upload
   // ─────────────────────────────────────────────
 
   Future<void> pickAndUploadDocument() async {
@@ -206,21 +196,24 @@ class DocumentProvider with ChangeNotifier {
       sizeBytes: pickedFile.size,
       addedAt: DateTime.now(),
       filePath: originalPath,
-      pageCount: null,
       isProcessed: false,
-      chunks: [],
+      isIndexed: false,
+      chunks: const [],
     );
 
-    // ⚡ INSTANT UI UPDATE: Add document to list & notify listeners immediately (< 1ms)!
+    // Instant UI update — extraction/embedding happen after this returns.
     _documents.add(doc);
     _saveToHive(doc);
     notifyListeners();
 
-    // 🚀 Background Non-Blocking Task: Copy file to persistent app storage & extract text in isolate
     _copyAndProcessInBackground(doc, originalPath, pickedFile.name);
   }
 
-  Future<void> _copyAndProcessInBackground(Document doc, String sourcePath, String name) async {
+  Future<void> _copyAndProcessInBackground(
+    Document doc,
+    String sourcePath,
+    String name,
+  ) async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final docDir = Directory('${appDir.path}/documents');
@@ -243,46 +236,42 @@ class DocumentProvider with ChangeNotifier {
     }
   }
 
-  // ─────────────────────────────────────────────
-  // Document Processing Pipeline (AI-ready)
-  // ─────────────────────────────────────────────
-
   Future<void> _processDocument(Document doc) async {
     if (doc.filePath == null) return;
-
     _setLoading(true);
 
     try {
+      final config = DeviceTierConfig.forTier(_cachedDeviceTier);
+
       final res = await compute(
         _isolateExtractTask,
-        _ExtractTaskArgs(doc.filePath!, doc.type.index),
+        _ExtractTaskArgs(
+          doc.filePath!,
+          doc.type.index,
+          config.chunkWords,
+          config.maxChunks,
+        ),
       );
 
-      final rawText = res.text;
-
-      if (rawText.isEmpty) {
+      if (res.text.isEmpty) {
         _error = 'Could not extract text from ${doc.name}';
         _setLoading(false);
         return;
       }
 
-      final chunks = res.chunks;
-
       final updated = doc.copyWith(
-        extractedText: rawText,
-        chunks: chunks,
-        pageCount: res.pageCount ?? doc.pageCount,
+        extractedText: res.text,
+        chunks: res.chunks,
+        pageCount: res.pageCount,
         isProcessed: true,
       );
 
       final index = _documents.indexWhere((d) => d.id == doc.id);
       if (index != -1) _documents[index] = updated;
-
       _saveToHive(updated);
       notifyListeners();
 
-      // Index asynchronously in background for offline sqlite-vec RAG engine
-      _ingestDocForRag(updated).catchError((e) => debugPrint('Background RAG notice: $e'));
+      _dispatchIngestion(updated, config);
     } catch (e) {
       _error = 'Processing failed: $e';
     }
@@ -290,8 +279,29 @@ class DocumentProvider with ChangeNotifier {
     _setLoading(false);
   }
 
+  /// Tier decides whether embedding happens now (background queue) or is
+  /// deferred until the document is actually queried — this is the
+  /// load-bearing branch, not just a config value.
+  void _dispatchIngestion(Document doc, DeviceTierConfig config) {
+    if (config.deferIngestion) {
+      debugPrint('⚡ ${_cachedDeviceTier.name} tier: deferring embedding for ${doc.name}');
+      return;
+    }
+    _enqueueIngestion(doc);
+  }
+
+  void _enqueueIngestion(Document doc) {
+    _ingestionService.enqueue(doc.id, doc.chunks, _cachedDeviceTier, (docId) {
+      final idx = _documents.indexWhere((d) => d.id == docId);
+      if (idx == -1) return; // deleted mid-ingest; nothing to update
+      _documents[idx] = _documents[idx].copyWith(isIndexed: true);
+      _saveToHive(_documents[idx]);
+      notifyListeners();
+    });
+  }
+
   // ─────────────────────────────────────────────
-  // SAFE TEXT EXTRACTION & SANITIZATION
+  // Sanitization
   // ─────────────────────────────────────────────
 
   static String sanitizeText(String text) {
@@ -308,59 +318,75 @@ class DocumentProvider with ChangeNotifier {
     return buffer.toString();
   }
 
-
-
   // ─────────────────────────────────────────────
-  // Vector RAG & Retrieval Engine (sqlite-vec + TFLite Embeddings)
+  // Retrieval — dual path: vector search, BM25-style lexical fallback
   // ─────────────────────────────────────────────
 
-  TFLiteEmbeddingProvider get embeddingProvider => OfflineAIService.instance.embeddingProvider;
-  VectorStorageService get storageService => OfflineAIService.instance.storageService;
-  bool get isRagReady => OfflineAIService.instance.isRagInitialized;
-
-  Future<void> _ensureRagInitialized() async {
-    await OfflineAIService.instance.initializeRag();
-  }
-
-  Future<void> _ingestDocForRag(Document doc) async {
-    // Fast in-memory chunking already populates doc.chunks instantly without main thread lockups.
-    debugPrint('✅ Document chunking completed for RAG: ${doc.name} (${doc.chunks.length} chunks)');
-  }
-
-  /// Fast, instant relevance scoring for document chunks (< 1ms execution)
-  List<String> getRelevantChunks(
+  Future<List<String>> getRelevantChunks(
     String docId,
     String query, {
     int topK = 3,
-  }) {
+  }) async {
     final doc = _documents.firstWhere(
       (d) => d.id == docId,
       orElse: () => throw Exception('Document not found'),
     );
-
     if (doc.chunks.isEmpty) return [];
 
+    if (doc.isIndexed && isRagReady) {
+      try {
+        final queryVector = await embeddingProvider.embed(query);
+        // NOTE: storageService.search() is synchronous — it executes a
+        // prepared sqlite statement and returns List<Map<String,dynamic>>
+        // directly. No await needed or valid here.
+        final vectorResults = storageService.search(queryVector, limit: topK * 2);
+
+        final retrieved = <String>[];
+        for (final item in vectorResults) {
+          final text = item['text_content'] as String?;
+          if (text != null && text.isNotEmpty) retrieved.add(text);
+          if (retrieved.length >= topK) break;
+        }
+        if (retrieved.isNotEmpty) return _capByLength(retrieved);
+      } catch (e) {
+        debugPrint('⚠️ Vector search failed, falling back to lexical: $e');
+      }
+    }
+
+    return _lexicalFallback(doc.chunks, query, topK);
+  }
+
+  Future<List<MapEntry<Document, List<String>>>> findRelevantAcrossLibrary(
+    String query, {
+    int topKPerDoc = 2,
+    int maxDocs = 3,
+  }) async {
+    final results = <MapEntry<Document, List<String>>>[];
+
+    for (final doc in _documents) {
+      if (!doc.isProcessed || doc.chunks.isEmpty) continue;
+      final chunks = await getRelevantChunks(doc.id, query, topK: topKPerDoc);
+      if (chunks.isNotEmpty) results.add(MapEntry(doc, chunks));
+    }
+
+    results.sort((a, b) => b.value.length.compareTo(a.value.length));
+    return results.take(maxDocs).toList();
+  }
+
+  List<String> _lexicalFallback(List<String> chunks, String query, int topK) {
     final queryLower = query.toLowerCase();
+    final queryWords = queryLower.split(RegExp(r'\s+')).where((w) => w.length > 2).toList();
+
     final isSummaryRequest = queryLower.contains('summariz') ||
         queryLower.contains('overview') ||
         queryLower.contains('about') ||
-        queryLower.contains('explain the doc') ||
         queryLower.contains('what is this');
 
     if (isSummaryRequest) {
-      final selected = <String>[];
-      int currentLength = 0;
-      for (final chunk in doc.chunks) {
-        if (currentLength + chunk.length > 1800 && selected.isNotEmpty) break;
-        selected.add(chunk);
-        currentLength += chunk.length;
-      }
-      return selected;
+      return _capByLength(chunks);
     }
 
-    final queryWords = queryLower.split(RegExp(r'\s+')).where((w) => w.length > 2).toList();
-
-    final scored = doc.chunks.map((chunk) {
+    final scored = chunks.map((chunk) {
       final lower = chunk.toLowerCase();
       int score = 0;
       for (final word in queryWords) {
@@ -368,64 +394,53 @@ class DocumentProvider with ChangeNotifier {
       }
       if (lower.contains(queryLower)) score += 10;
       return MapEntry(chunk, score);
-    }).toList();
+    }).toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
 
-    scored.sort((a, b) => b.value.compareTo(a.value));
+    final selected = scored.take(topK).map((e) => e.key).toList();
+    return selected.isEmpty ? _capByLength(chunks.take(topK).toList()) : _capByLength(selected);
+  }
 
+  List<String> _capByLength(List<String> chunks, {int maxChars = 1800}) {
     final selected = <String>[];
     int currentLength = 0;
-    for (final entry in scored.take(topK)) {
-      if (currentLength + entry.key.length > 1800 && selected.isNotEmpty) break;
-      selected.add(entry.key);
-      currentLength += entry.key.length;
+    for (final chunk in chunks) {
+      if (currentLength + chunk.length > maxChars && selected.isNotEmpty) break;
+      selected.add(chunk);
+      currentLength += chunk.length;
     }
-
-    if (selected.isEmpty) {
-      return doc.chunks.take(topK).toList();
-    }
-
     return selected;
   }
 
-  /// Finds documents relevant to a freeform topic across the whole library
-  List<MapEntry<Document, List<String>>> findRelevantAcrossLibrary(
-    String query, {
-    int topKPerDoc = 2,
-    int maxDocs = 3,
-  }) {
-    final queryWords = query.toLowerCase().split(RegExp(r'\s+')).where((w) => w.length > 2).toList();
-    final results = <MapEntry<Document, List<String>>
-
-    for (final doc in _documents) {
-      if (!doc.isProcessed || doc.chunks.isEmpty) continue;
-      final chunks = await getRelevantChunks(doc.id, query, topK: topKPerDoc);
-      final hasMatch = chunks.any((c) {
-        final lower = c.toLowerCase();
-        return queryWords.any((w) => lower.contains(w));
-      });
-      if (hasMatch) results.add(MapEntry(doc, chunks));
-    }
-
-    results.sort((a, b) => b.value.length.compareTo(a.value.length));
-    return results.take(maxDocs).toList();
-  }
-
   // ─────────────────────────────────────────────
-  // Hive Persistence
+  // Persistence / removal
   // ─────────────────────────────────────────────
 
   void _saveToHive(Document doc) {
     _documentBox.put(doc.id, doc.toMap());
   }
 
-  void removeDocument(String id) {
+  Future<void> removeDocument(String id) async {
+    // 1. Cancel any in-flight/queued ingestion and purge active worker tasks
+    await _ingestionService.cancelIngestion(id);
+
+    // 2. Delete from vector store by title — works whether the doc was
+    //    indexed in this session, a previous session, or never indexed.
+    try {
+      if (isRagReady) {
+        storageService.deleteDocumentByTitle(id);
+      }
+    } catch (e) {
+      debugPrint('Notice: vector store delete error for $id: $e');
+    }
+
     _documents.removeWhere((doc) => doc.id == id);
     _documentBox.delete(id);
     notifyListeners();
   }
 
   // ─────────────────────────────────────────────
-  // UI Helpers
+  // UI helpers
   // ─────────────────────────────────────────────
 
   void setSearchQuery(String query) {
@@ -441,18 +456,5 @@ class DocumentProvider with ChangeNotifier {
   void _setLoading(bool val) {
     _isLoading = val;
     notifyListeners();
-  }
-
-  // ─────────────────────────────────────────────
-  // FUTURE AI HOOK (IMPORTANT)
-  // ─────────────────────────────────────────────
-  // This is where you will later plug:
-  // - embeddings
-  // - vector DB
-  // - llama.cpp inference
-  // - offline RAG engine
-
-  void attachAIEngine() {
-    // TODO: connect to local model runtime
   }
 }
