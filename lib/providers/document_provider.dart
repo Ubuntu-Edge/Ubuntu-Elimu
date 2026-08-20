@@ -414,17 +414,17 @@ class DocumentProvider with ChangeNotifier {
 
   /// Finds documents relevant to a freeform topic across the whole library
   /// using hybrid semantic + keyword matching.
-  List<MapEntry<Document, List<String>>> findRelevantAcrossLibrary(
+  Future<List<MapEntry<Document, List<String>>>> findRelevantAcrossLibrary(
     String query, {
     int topKPerDoc = 2,
     int maxDocs = 3,
-  }) {
+  }) async {
     final queryWords = query.toLowerCase().split(RegExp(r'\s+')).where((w) => w.length > 2).toList();
     final results = <MapEntry<Document, List<String>>>[];
 
     for (final doc in _documents) {
       if (!doc.isProcessed || doc.chunks.isEmpty) continue;
-      final chunks = getRelevantChunks(doc.id, query, topK: topKPerDoc);
+      final chunks = await getRelevantChunks(doc.id, query, topK: topKPerDoc);
       final hasMatch = chunks.any((c) {
         final lower = c.toLowerCase();
         return queryWords.any((w) => lower.contains(w));

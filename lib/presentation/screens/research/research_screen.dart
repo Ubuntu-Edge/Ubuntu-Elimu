@@ -164,7 +164,7 @@ class _ResearchScreenState extends State<ResearchScreen> {
 
     if (_useLibraryGrounding) {
       final docProvider = context.read<DocumentProvider>();
-      final related = docProvider.findRelevantAcrossLibrary(trimmed);
+      final related = await docProvider.findRelevantAcrossLibrary(trimmed);
       contextChunks = related.expand((e) => e.value).toList();
       sourceNames = related.map((e) => e.key.name).toList();
     }
