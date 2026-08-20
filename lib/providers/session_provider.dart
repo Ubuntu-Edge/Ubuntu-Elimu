@@ -213,7 +213,7 @@ class SessionProvider with ChangeNotifier {
 
       List<String> chunks = [];
       if (_activeDocumentId != null) {
-        chunks = await docProvider.getRelevantChunks(_activeDocumentId!, text);
+        chunks = docProvider.getRelevantChunks(_activeDocumentId!, text);
       }
 
       _rebuildDenizenSession(
