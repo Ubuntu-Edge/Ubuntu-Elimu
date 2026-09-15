@@ -175,7 +175,7 @@ class _TopicInputFormState extends State<TopicInputForm> {
               value: value,
               isExpanded: true,
               dropdownColor: UEColors.surface,
-              icon: Icon(TablerIcons.chevron_down, color: UEColors.textMuted, size: 14),
+              icon: const Icon(TablerIcons.chevron_down, color: UEColors.textMuted, size: 14),
               style: UETypography.inter(fontSize: 12, color: UEColors.textPrimary),
               onChanged: onChanged,
               items: options.map<DropdownMenuItem<String>>((String value) {

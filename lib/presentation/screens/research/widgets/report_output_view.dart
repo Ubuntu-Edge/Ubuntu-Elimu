@@ -50,18 +50,18 @@ class ReportOutputView extends StatelessWidget {
                   GestureDetector(
                     onTap: () {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Text('Report saved to Library (Local cache)'),
+                        const SnackBar(
+                          content: Text('Report saved to Library (Local cache)'),
                           backgroundColor: UEColors.surface,
                         ),
                       );
                     },
-                    child: Icon(TablerIcons.download, color: UEColors.textMuted, size: 16),
+                    child: const Icon(TablerIcons.download, color: UEColors.textMuted, size: 16),
                   ),
                   const SizedBox(width: 14),
                   GestureDetector(
                     onTap: onClear,
-                    child: Icon(TablerIcons.trash, color: UEColors.pdfFg, size: 16),
+                    child: const Icon(TablerIcons.trash, color: UEColors.pdfFg, size: 16),
                   ),
                 ],
               ),
@@ -132,7 +132,7 @@ class ReportOutputView extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(TablerIcons.file_text, color: UEColors.accent, size: 12),
+          const Icon(TablerIcons.file_text, color: UEColors.accent, size: 12),
           const SizedBox(width: 6),
           Text(
             name,

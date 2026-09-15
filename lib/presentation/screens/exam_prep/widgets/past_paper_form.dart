@@ -54,8 +54,8 @@ class PastPaperForm extends StatelessWidget {
             GestureDetector(
               onTap: () {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('Local server check: all past papers cached offline'),
+                  const SnackBar(
+                    content: Text('Local server check: all past papers cached offline'),
                     backgroundColor: UEColors.surface,
                   ),
                 );
@@ -151,7 +151,7 @@ class PastPaperForm extends StatelessWidget {
                     ),
                   );
                 },
-                child: Icon(
+                child: const Icon(
                   TablerIcons.player_play,
                   color: UEColors.green,
                   size: 16,

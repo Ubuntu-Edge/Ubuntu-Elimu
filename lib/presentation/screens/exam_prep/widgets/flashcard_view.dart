@@ -125,7 +125,7 @@ class _FlashcardViewState extends State<FlashcardView>
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             IconButton(
-              icon: Icon(TablerIcons.chevron_left, color: UEColors.textMuted),
+              icon: const Icon(TablerIcons.chevron_left, color: UEColors.textMuted),
               onPressed: _prevCard,
             ),
             const SizedBox(width: 20),
@@ -139,7 +139,7 @@ class _FlashcardViewState extends State<FlashcardView>
             ),
             const SizedBox(width: 20),
             IconButton(
-              icon: Icon(TablerIcons.chevron_right, color: UEColors.textMuted),
+              icon: const Icon(TablerIcons.chevron_right, color: UEColors.textMuted),
               onPressed: _nextCard,
             ),
           ],
