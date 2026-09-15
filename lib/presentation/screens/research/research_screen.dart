@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
@@ -389,7 +388,7 @@ class _ResearchScreenState extends State<ResearchScreen> {
               decoration: BoxDecoration(
                 color: UEColors.pdfBg,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: UEColors.pdfFg.withOpacity(0.3)),
+                border: Border.all(color: UEColors.pdfFg.withValues(alpha: 0.3)),
               ),
               child: Row(
                 children: [
@@ -444,7 +443,7 @@ class _ResearchScreenState extends State<ResearchScreen> {
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: UEColors.indigo.withOpacity(0.12),
+              color: UEColors.indigo.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
@@ -472,9 +471,9 @@ class _ResearchScreenState extends State<ResearchScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: UEColors.indigo.withOpacity(0.15),
+                        color: UEColors.indigo.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: UEColors.indigo.withOpacity(0.4)),
+                        border: Border.all(color: UEColors.indigo.withValues(alpha: 0.4)),
                       ),
                       child: const Text(
                         'VISION',
@@ -636,8 +635,8 @@ class _ResearchScreenState extends State<ResearchScreen> {
           margin: const EdgeInsets.only(left: 48, bottom: 16),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            color: UEColors.indigo.withOpacity(0.18),
-            border: Border.all(color: UEColors.indigo.withOpacity(0.3), width: 0.5),
+            color: UEColors.indigo.withValues(alpha: 0.18),
+            border: Border.all(color: UEColors.indigo.withValues(alpha: 0.3), width: 0.5),
             borderRadius: const BorderRadius.only(
               topLeft: Radius.circular(16),
               topRight: Radius.circular(16),

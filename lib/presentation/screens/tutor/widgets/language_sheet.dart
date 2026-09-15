@@ -95,7 +95,7 @@ class LanguageSheet extends StatelessWidget {
                             horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
                           color: isSelected
-                              ? UEColors.indigo.withOpacity(0.15)
+                              ? UEColors.indigo.withValues(alpha: 0.15)
                               : UEColors.bgCard,
                           borderRadius: BorderRadius.circular(6),
                         ),

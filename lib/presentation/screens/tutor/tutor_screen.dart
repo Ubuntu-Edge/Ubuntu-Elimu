@@ -251,7 +251,7 @@ class _TutorScreenState extends State<TutorScreen> {
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: UEColors.accent.withOpacity(0.15),
+              color: UEColors.accent.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Icon(
@@ -350,7 +350,7 @@ class _TutorScreenState extends State<TutorScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: activeDoc != null ? UEColors.accent.withOpacity(0.12) : UEColors.surface,
+                  color: activeDoc != null ? UEColors.accent.withValues(alpha: 0.12) : UEColors.surface,
                   border: Border.all(
                     color: activeDoc != null ? UEColors.accent : UEColors.border,
                     width: 0.5,

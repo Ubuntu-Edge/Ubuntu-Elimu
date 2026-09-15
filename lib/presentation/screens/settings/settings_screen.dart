@@ -5,7 +5,6 @@ import 'package:denizen_ai/denizen_ai.dart';
 import 'dart:io';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
-import '../../../models/offline_model.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../providers/offline_model_provider.dart';
 import 'model_registry_screen.dart';
@@ -39,16 +38,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _openModelRegistry(BuildContext context) async {
+    final provider = Provider.of<OfflineModelProvider>(context, listen: false);
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const ModelRegistryScreen()),
     );
     // Refresh state upon return
-    if (mounted) {
-      _loadRamInfo();
-      final provider = Provider.of<OfflineModelProvider>(context, listen: false);
-      await provider.initialize();
-    }
+    if (!mounted) return;
+    _loadRamInfo();
+    await provider.initialize();
   }
 
   Widget _buildRamBar(int availableMB) {
@@ -61,14 +59,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ? const Color(0xFFE6A817)
                 : UEColors.pdfFg;
     final text = hasRamReading
-        ? 'Free device memory: ${availableMB} MB (${availableMB >= 700 ? "Good" : availableMB >= 400 ? "Low" : "Critical"})'
+        ? 'Free device memory: $availableMB MB (${availableMB >= 700 ? "Good" : availableMB >= 400 ? "Low" : "Critical"})'
         : 'Engine Memory: Auto-Managed by On-Device AI Runtime';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        border: Border.all(color: color.withOpacity(0.3), width: 0.5),
+        color: color.withValues(alpha: 0.08),
+        border: Border.all(color: color.withValues(alpha: 0.3), width: 0.5),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
@@ -254,7 +252,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         color: UEColors.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isLoaded ? UEColors.green.withOpacity(0.6) : UEColors.border,
+          color: isLoaded ? UEColors.green.withValues(alpha: 0.6) : UEColors.border,
           width: isLoaded ? 1.5 : 0.5,
         ),
       ),
@@ -366,7 +364,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             value: settings.socraticMode,
             activeThumbColor: UEColors.accent,
-            activeTrackColor: UEColors.accent.withOpacity(0.5),
+            activeTrackColor: UEColors.accent.withValues(alpha: 0.5),
             onChanged: (val) => settings.toggleSocraticMode(val),
           ),
           const Padding(
@@ -384,7 +382,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             value: settings.powerMode,
             activeThumbColor: UEColors.accent,
-            activeTrackColor: UEColors.accent.withOpacity(0.5),
+            activeTrackColor: UEColors.accent.withValues(alpha: 0.5),
             onChanged: (val) => settings.togglePowerMode(val),
           ),
         ],

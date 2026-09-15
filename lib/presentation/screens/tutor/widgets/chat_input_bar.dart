@@ -105,7 +105,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
             color: _isListening
                 ? UEColors.accent
                 : _hasText
-                    ? UEColors.indigo.withOpacity(0.4)
+                    ? UEColors.indigo.withValues(alpha: 0.4)
                     : UEColors.bgBorder,
             width: _isListening ? 1.0 : 0.5,
           ),
@@ -153,7 +153,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: widget.isTyping
-                    ? Colors.redAccent.withOpacity(0.85)
+                    ? Colors.redAccent.withValues(alpha: 0.85)
                     : _hasText
                         ? UEColors.indigo
                         : UEColors.bgBorder,

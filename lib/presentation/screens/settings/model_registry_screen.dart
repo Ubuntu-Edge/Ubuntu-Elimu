@@ -91,6 +91,7 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
         },
       );
 
+      if (!mounted) return;
       final provider = Provider.of<OfflineModelProvider>(context, listen: false);
       await provider.initialize();
       await _checkDownloadedModels();
@@ -140,14 +141,14 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
                 ? const Color(0xFFE6A817)
                 : UEColors.pdfFg;
     final text = hasRamReading
-        ? 'Free device memory: ${availableMB} MB (${availableMB >= 700 ? "Good" : availableMB >= 400 ? "Low" : "Critical"})'
+        ? 'Free device memory: $availableMB MB (${availableMB >= 700 ? "Good" : availableMB >= 400 ? "Low" : "Critical"})'
         : 'Engine Memory: Auto-Managed by On-Device AI Runtime';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        border: Border.all(color: color.withOpacity(0.3), width: 0.5),
+        color: color.withValues(alpha: 0.08),
+        border: Border.all(color: color.withValues(alpha: 0.3), width: 0.5),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
@@ -199,8 +200,8 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: UEColors.accent.withOpacity(0.08),
-              border: Border.all(color: UEColors.accent.withOpacity(0.3), width: 0.5),
+              color: UEColors.accent.withValues(alpha: 0.08),
+              border: Border.all(color: UEColors.accent.withValues(alpha: 0.3), width: 0.5),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
@@ -279,7 +280,7 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
                 color: UEColors.surface,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
-                  color: isCurrentlyLoaded ? UEColors.green.withOpacity(0.6) : UEColors.border,
+                  color: isCurrentlyLoaded ? UEColors.green.withValues(alpha: 0.6) : UEColors.border,
                   width: isCurrentlyLoaded ? 1.5 : 0.5,
                 ),
               ),
@@ -292,9 +293,9 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                         margin: const EdgeInsets.only(right: 8),
                         decoration: BoxDecoration(
-                          color: badgeColor.withOpacity(0.12),
+                          color: badgeColor.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: badgeColor.withOpacity(0.4), width: 0.5),
+                          border: Border.all(color: badgeColor.withValues(alpha: 0.4), width: 0.5),
                         ),
                         child: Text(
                           categoryBadge,
@@ -337,7 +338,7 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '${model.author} · ${model.quantization ?? "Q4_K_M"} · needs ~${requiredRamMB} MB RAM',
+                    '${model.author} · ${model.quantization ?? "Q4_K_M"} · needs ~$requiredRamMB MB RAM',
                     style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
                   ),
                   const SizedBox(height: 6),
@@ -358,7 +359,7 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(TablerIcons.check, size: 16, color: UEColors.green),
+                          const Icon(TablerIcons.check, size: 16, color: UEColors.green),
                           const SizedBox(width: 6),
                           Text(
                             'ACTIVE ENGINE MODEL',
