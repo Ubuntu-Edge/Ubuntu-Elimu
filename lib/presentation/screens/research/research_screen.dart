@@ -108,8 +108,9 @@ class _ResearchScreenState extends State<ResearchScreen> {
         }
 
         if (bytes != null && bytes.isNotEmpty) {
+          final safeBytes = await DenizenVisionSession.optimizeImage(bytes);
           setState(() {
-            _attachedImageBytes = bytes;
+            _attachedImageBytes = safeBytes;
             _attachedImageName = picked.name;
             _error = null;
           });
@@ -267,17 +268,22 @@ class _ResearchScreenState extends State<ResearchScreen> {
         );
 
         String accumulated = '';
-        await for (final chunk in stream) {
-          accumulated += chunk;
-          if (mounted) {
-            setState(() {
-              final idx = _messages.indexWhere((m) => m.id == aiMsgId);
-              if (idx != -1) {
-                _messages[idx] = _messages[idx].copyWith(text: accumulated);
-              }
-            });
-            _scrollToBottom();
+        try {
+          await for (final chunk in stream) {
+            accumulated += chunk;
+            if (mounted) {
+              setState(() {
+                final idx = _messages.indexWhere((m) => m.id == aiMsgId);
+                if (idx != -1) {
+                  _messages[idx] = _messages[idx].copyWith(text: accumulated);
+                }
+              });
+              _scrollToBottom();
+            }
           }
+        } catch (streamErr) {
+          debugPrint('⚠️ Multimodal streaming error: $streamErr');
+          accumulated += '\n\n*(Notice: $streamErr)*';
         }
 
         sw.stop();
