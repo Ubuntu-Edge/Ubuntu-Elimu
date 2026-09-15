@@ -78,9 +78,6 @@ class _ResearchScreenState extends State<ResearchScreen> {
 
   bool _isGenerating = false;
   bool _isListening = false;
-  bool _isLoadingVisionModel = false;
-  double _modelDownloadProgress = 0.0;
-  String _modelStatusMessage = "";
   String? _error;
   StreamSubscription<String>? _streamSub;
 
@@ -131,51 +128,6 @@ class _ResearchScreenState extends State<ResearchScreen> {
       _attachedImageBytes = null;
       _attachedImageName = null;
     });
-  }
-
-  Future<void> _activateVisionModel() async {
-    final modelProvider = context.read<OfflineModelProvider>();
-    setState(() {
-      _isLoadingVisionModel = true;
-      _modelDownloadProgress = 0.0;
-      _modelStatusMessage = "Activating LFM2.5-VL Vision AI...";
-      _error = null;
-    });
-
-    try {
-      final visionModel = DefaultOfflineModels.getUltraLightVisionModel();
-      await DenizenAI().models.load(
-        visionModel.id,
-        requireWifi: false,
-        onProgress: (p) {
-          setState(() {
-            _modelDownloadProgress = p.progress;
-            _modelStatusMessage =
-                "Downloading Vision Model: ${(p.percent).toStringAsFixed(1)}% (${(p.bytesDownloaded / (1024 * 1024)).toStringAsFixed(1)} MB / ${(p.totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB)";
-          });
-        },
-      );
-      await modelProvider.setActiveModel(visionModel);
-      setState(() {
-        _modelStatusMessage = "Vision Model Ready!";
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('LFM2.5-VL Vision Model activated successfully!'),
-            backgroundColor: UEColors.indigo,
-          ),
-        );
-      }
-    } catch (e) {
-      setState(() {
-        _error = 'Failed to activate vision model: $e';
-      });
-    } finally {
-      setState(() {
-        _isLoadingVisionModel = false;
-      });
-    }
   }
 
   Future<void> _toggleListening() async {
@@ -244,12 +196,10 @@ class _ResearchScreenState extends State<ResearchScreen> {
   Future<void> _sendMessage([String? overrideText]) async {
     final rawText = overrideText ?? _textController.text;
     final hasImage = _attachedImageBytes != null;
-    final hasActiveVisualContext = _activeConversationImage != null;
 
     String prompt = rawText.trim();
     if (prompt.isEmpty && !hasImage) return;
 
-    // If only image was attached without text, default to an intelligent research prompt
     if (prompt.isEmpty && hasImage) {
       prompt =
           "Analyze and research this image in detail. Explain all visible diagrams, equations, specimens, text, or objects clearly.";
@@ -259,7 +209,7 @@ class _ResearchScreenState extends State<ResearchScreen> {
 
     final modelProvider = context.read<OfflineModelProvider>();
     if (!modelProvider.hasActiveModel) {
-      setState(() => _error = 'No AI model loaded — activate one in Settings or below.');
+      setState(() => _error = 'No AI model loaded — activate one in Settings > Model Registry.');
       return;
     }
 
@@ -268,7 +218,7 @@ class _ResearchScreenState extends State<ResearchScreen> {
 
     if (isMultimodalQuery && !modelProvider.hasVisionLoaded) {
       setState(() => _error =
-          'Image analysis requires the LFM2.5-VL Multimodal Vision model. Tap "Activate Vision AI" above.');
+          'Image analysis requires a Vision model. Please load LFM2.5-VL in Settings > Model Registry.');
       return;
     }
 
@@ -423,7 +373,6 @@ class _ResearchScreenState extends State<ResearchScreen> {
   @override
   Widget build(BuildContext context) {
     final modelProvider = context.watch<OfflineModelProvider>();
-    final bool isVisionReady = modelProvider.hasVisionLoaded;
 
     return Scaffold(
       backgroundColor: UEColors.bgPrimary,
@@ -431,10 +380,6 @@ class _ResearchScreenState extends State<ResearchScreen> {
         children: [
           // Header Bar
           _buildHeader(modelProvider),
-
-          // Vision Model Activation Banner (if needed)
-          if (!isVisionReady && (_attachedImageBytes != null || _isLoadingVisionModel))
-            _buildVisionActivationBanner(),
 
           if (_error != null)
             Container(
@@ -466,14 +411,14 @@ class _ResearchScreenState extends State<ResearchScreen> {
               ),
             ),
 
-          // Main Chat Area / Empty Suggestion State
+          // Main Chat Area / Clean Empty State
           Expanded(
             child: _messages.isEmpty
                 ? _buildEmptyState(modelProvider)
                 : _buildMessageList(),
           ),
 
-          // Attached Image Preview Pill (if an image is selected)
+          // Attached Image Preview Pill
           if (_attachedImageBytes != null) _buildAttachedImagePill(),
 
           // Floating Input Bar
@@ -499,14 +444,12 @@ class _ResearchScreenState extends State<ResearchScreen> {
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: hasVision
-                  ? Colors.purple.withOpacity(0.15)
-                  : UEColors.indigo.withOpacity(0.12),
+              color: UEColors.indigo.withOpacity(0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
               hasVision ? TablerIcons.eye : TablerIcons.sparkles,
-              color: hasVision ? Colors.purpleAccent : UEColors.indigo,
+              color: UEColors.indigo,
               size: 20,
             ),
           ),
@@ -529,14 +472,14 @@ class _ResearchScreenState extends State<ResearchScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: Colors.purple.withOpacity(0.2),
+                        color: UEColors.indigo.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: Colors.purpleAccent.withOpacity(0.4)),
+                        border: Border.all(color: UEColors.indigo.withOpacity(0.4)),
                       ),
                       child: const Text(
                         'VISION',
                         style: TextStyle(
-                          color: Colors.purpleAccent,
+                          color: UEColors.indigo,
                           fontSize: 9,
                           fontWeight: FontWeight.bold,
                         ),
@@ -558,7 +501,7 @@ class _ResearchScreenState extends State<ResearchScreen> {
           IconButton(
             onPressed: _pickImageFromDevice,
             icon: const Icon(TablerIcons.photo_plus, size: 20, color: UEColors.accent),
-            tooltip: 'Upload Image for Analysis',
+            tooltip: 'Attach Image for Analysis',
           ),
           if (_messages.isNotEmpty)
             IconButton(
@@ -571,216 +514,104 @@ class _ResearchScreenState extends State<ResearchScreen> {
     );
   }
 
-  Widget _buildVisionActivationBanner() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.purple.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.purpleAccent.withOpacity(0.4)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(TablerIcons.eye, color: Colors.purpleAccent, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  "Vision analysis requires LFM2.5-VL multimodal weights (~322 MB)",
-                  style: UETypography.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.purpleAccent,
-                  ),
-                ),
-              ),
-              ElevatedButton.icon(
-                onPressed: _isLoadingVisionModel ? null : _activateVisionModel,
-                icon: const Icon(Icons.bolt, size: 14),
-                label: const Text("Activate Vision AI", style: TextStyle(fontSize: 11)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.purple,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
-            ],
-          ),
-          if (_isLoadingVisionModel) ...[
-            const SizedBox(height: 8),
-            LinearProgressIndicator(value: _modelDownloadProgress),
-            const SizedBox(height: 4),
-            Text(
-              _modelStatusMessage,
-              style: const TextStyle(fontSize: 10, color: Colors.purpleAccent),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
   Widget _buildAttachedImagePill() {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: UEColors.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.purpleAccent.withOpacity(0.5)),
+        border: Border.all(color: UEColors.border, width: 0.5),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.memory(
-                  _attachedImageBytes!,
-                  width: 44,
-                  height: 44,
-                  fit: BoxFit.cover,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _attachedImageName ?? 'Attached Image',
-                      style: UETypography.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: UEColors.textPrimary,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      "${(_attachedImageBytes!.length / 1024).toStringAsFixed(1)} KB • Multi-tile ready for reasoning",
-                      style: UETypography.inter(
-                        fontSize: 10,
-                        color: Colors.purpleAccent,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                onPressed: _clearAttachedImage,
-                icon: const Icon(Icons.close, size: 18, color: UEColors.textMuted),
-                tooltip: 'Remove Attachment',
-              ),
-            ],
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.memory(
+              _attachedImageBytes!,
+              width: 44,
+              height: 44,
+              fit: BoxFit.cover,
+            ),
           ),
-          const SizedBox(height: 6),
-          // Visual Suggestion Chips
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildQuickChip("📐 Solve math / equation", "Solve and explain this math problem step by step with clear reasoning."),
-                _buildQuickChip("🧬 Explain diagram", "Explain all labeled parts and principles shown in this diagram in detail."),
-                _buildQuickChip("📝 Transcribe all text", "Read and transcribe all visible text, formulas, and labels in this image."),
-                _buildQuickChip("🔍 Detailed analysis", "Analyze and summarize all key observations and data in this image."),
+                Text(
+                  _attachedImageName ?? 'Attached Image',
+                  style: UETypography.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: UEColors.textPrimary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  "${(_attachedImageBytes!.length / 1024).toStringAsFixed(1)} KB",
+                  style: UETypography.inter(
+                    fontSize: 10,
+                    color: UEColors.textMuted,
+                  ),
+                ),
               ],
             ),
           ),
+          IconButton(
+            onPressed: _clearAttachedImage,
+            icon: const Icon(Icons.close, size: 18, color: UEColors.textMuted),
+            tooltip: 'Remove Attachment',
+          ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildQuickChip(String label, String prompt) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 6),
-      child: ActionChip(
-        label: Text(label, style: const TextStyle(fontSize: 10, color: Colors.white70)),
-        backgroundColor: UEColors.bgCard,
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        onPressed: _isGenerating ? null : () => _sendMessage(prompt),
       ),
     );
   }
 
   Widget _buildEmptyState(OfflineModelProvider modelProvider) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const SizedBox(height: 16),
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              color: UEColors.surface,
-              shape: BoxShape.circle,
-              border: Border.all(color: UEColors.border, width: 0.5),
-            ),
-            child: const Icon(
-              TablerIcons.sparkles,
-              size: 32,
-              color: UEColors.accent,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'What would you like to research?',
-            textAlign: TextAlign.center,
-            style: UETypography.spaceGrotesk(
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-              color: UEColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Ask any academic question or upload photos of diagrams, math problems, handwritten notes, and science charts for 100% offline multimodal analysis.',
-            textAlign: TextAlign.center,
-            style: UETypography.inter(
-              fontSize: 13,
-              color: UEColors.textMuted,
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Starter Action Cards
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.center,
-            children: [
-              ActionChip(
-                avatar: const Icon(TablerIcons.photo_plus, size: 14, color: Colors.purpleAccent),
-                label: const Text('📸 Upload diagram / photo to analyze'),
-                onPressed: _pickImageFromDevice,
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: UEColors.surface,
+                shape: BoxShape.circle,
+                border: Border.all(color: UEColors.border, width: 0.5),
               ),
-              ActionChip(
-                avatar: const Icon(TablerIcons.math_function, size: 14, color: UEColors.indigo),
-                label: const Text('📐 Explain Pythagorean Theorem'),
-                onPressed: () => _sendMessage("Can you explain the Pythagorean theorem and provide step-by-step examples?"),
+              child: const Icon(
+                TablerIcons.sparkles,
+                size: 26,
+                color: UEColors.accent,
               ),
-              ActionChip(
-                avatar: const Icon(TablerIcons.dna, size: 14, color: Colors.greenAccent),
-                label: const Text('🌿 How photosynthesis works'),
-                onPressed: () => _sendMessage("Explain photosynthesis simply: what do plants need and what do they produce?"),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'What would you like to research?',
+              textAlign: TextAlign.center,
+              style: UETypography.spaceGrotesk(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: UEColors.textPrimary,
               ),
-              ActionChip(
-                avatar: const Icon(TablerIcons.language, size: 14, color: Colors.amberAccent),
-                label: const Text('🇰🇪 Tofauti ya Nomino na Kitenzi'),
-                onPressed: () => _sendMessage("Eleza tofauti iliyopo kati ya Nomino na Kitenzi katika sarufi ya Kiswahili."),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Ask any academic question or attach photos for 100% offline multimodal analysis.',
+              textAlign: TextAlign.center,
+              style: UETypography.inter(
+                fontSize: 13,
+                color: UEColors.textMuted,
+                height: 1.4,
               ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -999,7 +830,7 @@ class _ResearchScreenState extends State<ResearchScreen> {
                   border: Border.all(
                     color: _isListening
                         ? UEColors.accent
-                        : (hasImage ? Colors.purpleAccent : UEColors.border),
+                        : (hasImage ? UEColors.indigo : UEColors.border),
                     width: _isListening || hasImage ? 1.0 : 0.5,
                   ),
                   borderRadius: BorderRadius.circular(24),
@@ -1010,7 +841,7 @@ class _ResearchScreenState extends State<ResearchScreen> {
                       onPressed: _isGenerating ? null : _pickImageFromDevice,
                       icon: Icon(
                         hasImage ? TablerIcons.photo_check : TablerIcons.photo,
-                        color: hasImage ? Colors.purpleAccent : UEColors.textMuted,
+                        color: hasImage ? UEColors.indigo : UEColors.textMuted,
                         size: 20,
                       ),
                       tooltip: 'Attach Image / Diagram',
@@ -1037,7 +868,7 @@ class _ResearchScreenState extends State<ResearchScreen> {
                             fontSize: 13,
                             color: _isListening
                                 ? UEColors.accent
-                                : (hasImage ? Colors.purpleAccent.withOpacity(0.7) : UEColors.textMuted),
+                                : UEColors.textMuted,
                           ),
                           border: InputBorder.none,
                         ),
@@ -1063,7 +894,7 @@ class _ResearchScreenState extends State<ResearchScreen> {
                   ? () => _sendMessage()
                   : null,
               style: IconButton.styleFrom(
-                backgroundColor: hasImage ? Colors.purple : (isEnabled && !_isGenerating ? UEColors.indigo : UEColors.surface),
+                backgroundColor: (isEnabled || hasImage) && !_isGenerating ? UEColors.indigo : UEColors.surface,
                 foregroundColor: Colors.white,
                 shape: const CircleBorder(),
                 padding: const EdgeInsets.all(12),

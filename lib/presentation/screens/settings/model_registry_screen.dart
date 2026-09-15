@@ -18,7 +18,11 @@ class ModelRegistryScreen extends StatefulWidget {
 
 class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
   final DenizenAI _denizen = DenizenAI();
-  final List<OfflineModel> _availableModels = DefaultOfflineModels.getMedicalModels();
+  final List<OfflineModel> _availableModels = [
+    DefaultOfflineModels.getUltraLightVisionModel(),
+    ...DefaultOfflineModels.getEducationModels(),
+    DefaultOfflineModels.getInspectionVisionModel(),
+  ];
 
   String? _downloadingModelId;
   double _downloadProgress = 0.0;
@@ -201,7 +205,7 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
             ),
             child: Row(
               children: [
-                Icon(TablerIcons.info_circle, color: UEColors.accent, size: 24),
+                const Icon(TablerIcons.info_circle, color: UEColors.accent, size: 24),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
@@ -252,17 +256,21 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
             final isDownloadedOnDisk = _downloadedModelIds.contains(model.id);
             final requiredRamMB = (model.sizeMB * 2.5).ceil();
 
-            final String categoryBadge = model.id.contains('0.5b')
-                ? '⚡ ULTRA-LIGHTWEIGHT'
-                : model.id.contains('gemma') || model.id.contains('1b') || model.id.contains('1.5b')
-                    ? '🎯 RAG & REASONING'
-                    : '🧠 HIGH-END EDGE';
+            final String categoryBadge = model.isVision
+                ? '👁️ MULTIMODAL VISION'
+                : model.id.contains('0.5b')
+                    ? '⚡ ULTRA-LIGHTWEIGHT'
+                    : model.id.contains('gemma') || model.id.contains('1b') || model.id.contains('1.5b')
+                        ? '🎯 RAG & REASONING'
+                        : '🧠 HIGH-END EDGE';
 
-            final Color badgeColor = model.id.contains('0.5b')
-                ? UEColors.accent
-                : model.id.contains('gemma') || model.id.contains('1b') || model.id.contains('1.5b')
-                    ? const Color(0xFF059669)
-                    : const Color(0xFF8B5CF6);
+            final Color badgeColor = model.isVision
+                ? UEColors.indigo
+                : model.id.contains('0.5b')
+                    ? UEColors.accent
+                    : model.id.contains('gemma') || model.id.contains('1b') || model.id.contains('1.5b')
+                        ? const Color(0xFF059669)
+                        : const Color(0xFF8B5CF6);
 
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
