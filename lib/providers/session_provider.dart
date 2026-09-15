@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:denizen_ai/denizen_ai.dart';
+import 'package:denizen_ai/denizen_ai.dart' hide ChatMessage;
 import '../models/chat_message.dart';
 import 'document_provider.dart';
 
@@ -56,14 +56,15 @@ class SessionProvider with ChangeNotifier {
   }) {
     String context = '';
     if (contextChunks != null && contextChunks.isNotEmpty) {
-      final joined = contextChunks.join('\n---\n');
-      final safeJoined = joined.length > 1800 ? joined.substring(0, 1800) : joined;
-      context = '\n\n[DOCUMENT KNOWLEDGE BASE]:\n$safeJoined\n\n[INSTRUCTION]: Base your answers on the above document content. Be helpful, concise, and accurate.';
+      final joined = contextChunks.join('\n\n---\n\n');
+      context = '\n\nYou are a helpful document assistant. Use the following document content as your knowledge base:\n\n$joined\n\nAnswer based ONLY on the above content.';
     }
 
-    final systemPrompt = socratic
-        ? 'You are an expert academic tutor for Ubuntu Elimu. Help the student understand their document and study topics clearly. Be encouraging, patient, concise, and respond in $language.$context'
-        : 'You are a direct, clear study assistant for Ubuntu Elimu. Answer questions directly using the provided document knowledge base. Be concise, clear, and respond in $language.$context';
+    final systemPrompt = context.isNotEmpty
+        ? 'You are an expert academic tutor for Ubuntu Elimu. $context'
+        : (socratic
+            ? 'You are an expert academic tutor for Ubuntu Elimu. Help the student understand their study topics clearly. Be encouraging, patient, concise, and respond in $language.'
+            : 'You are a direct, clear study assistant for Ubuntu Elimu. Answer questions directly and concisely in $language.');
 
     _activeSession = _denizen.createSession(
       systemPrompt: systemPrompt,
@@ -81,6 +82,9 @@ class SessionProvider with ChangeNotifier {
           role: e['role'] == 'user' ? MessageRole.user : MessageRole.ai,
           content: e['content'],
           timestamp: DateTime.parse(e['timestamp']),
+          generationSeconds: e['generationSeconds'] != null
+              ? (e['generationSeconds'] as num).toDouble()
+              : null,
         );
       }).toList();
     } else {
@@ -106,6 +110,7 @@ class SessionProvider with ChangeNotifier {
       'role': m.role == MessageRole.user ? 'user' : 'ai',
       'content': m.content,
       'timestamp': m.timestamp.toIso8601String(),
+      if (m.generationSeconds != null) 'generationSeconds': m.generationSeconds,
     }).toList();
     _sessionBox.put('messages', list);
     _sessionBox.put('activeDocumentId', _activeDocumentId);
@@ -154,28 +159,17 @@ class SessionProvider with ChangeNotifier {
     if (text.trim().isEmpty) return;
     if (!_isInitialized) await init();
 
-    // Add user message
-    final userMsg = ChatMessage(
+    // Add user message and show generating state immediately
+    _chatMessages.add(ChatMessage(
       id: 'msg_${DateTime.now().millisecondsSinceEpoch}',
       role: MessageRole.user,
       content: text,
       timestamp: DateTime.now(),
-    );
-    _chatMessages.add(userMsg);
+    ));
     _isGenerating = true;
     notifyListeners();
 
-    // Add empty AI message placeholder for streaming
-    final aiMsgId = 'msg_${DateTime.now().millisecondsSinceEpoch}_ai';
-    final aiMsg = ChatMessage(
-      id: aiMsgId,
-      role: MessageRole.ai,
-      content: '',
-      timestamp: DateTime.now(),
-    );
-    _chatMessages.add(aiMsg);
-    notifyListeners();
-
+    // Wait for any ongoing generation to finish
     while (_activeLock != null) {
       await _activeLock!.future;
     }
@@ -189,9 +183,12 @@ class SessionProvider with ChangeNotifier {
 
     try {
       if (!_denizen.isModelLoaded) {
-        _updateLastMessage(
-          'No model loaded. Please go to Settings to download and activate a model first.',
-        );
+        _chatMessages.add(ChatMessage(
+          id: 'msg_${DateTime.now().millisecondsSinceEpoch}_ai',
+          role: MessageRole.ai,
+          content: 'No model loaded. Please go to Settings to download and activate a model first.',
+          timestamp: DateTime.now(),
+        ));
         _isGenerating = false;
         notifyListeners();
         return;
@@ -209,6 +206,16 @@ class SessionProvider with ChangeNotifier {
         docProvider: docProvider,
       );
 
+      // Add the AI placeholder bubble only now — inference is about to start
+      _chatMessages.add(ChatMessage(
+        id: 'msg_${DateTime.now().millisecondsSinceEpoch}_ai',
+        role: MessageRole.ai,
+        content: '',
+        timestamp: DateTime.now(),
+      ));
+      notifyListeners();
+
+      final sw = Stopwatch()..start();
       final stream = _activeSession!.streamChat(text);
       final buffer = StringBuffer();
 
@@ -219,6 +226,7 @@ class SessionProvider with ChangeNotifier {
           _updateLastMessage(buffer.toString());
         },
         onError: (e) {
+          sw.stop();
           debugPrint('❌ Tutor streaming error: $e');
           _updateLastMessage('Sorry, an error occurred during inference: $e');
           _isGenerating = false;
@@ -227,6 +235,12 @@ class SessionProvider with ChangeNotifier {
           if (!currentLock.isCompleted) currentLock.complete();
         },
         onDone: () {
+          sw.stop();
+          final sec = sw.elapsedMilliseconds / 1000.0;
+          _updateLastMessage(
+            buffer.toString(),
+            generationSeconds: sec,
+          );
           _isGenerating = false;
           _saveSession();
           notifyListeners();
@@ -245,7 +259,7 @@ class SessionProvider with ChangeNotifier {
     }
   }
 
-  void _updateLastMessage(String content) {
+  void _updateLastMessage(String content, {double? generationSeconds}) {
     if (_chatMessages.isEmpty) return;
     final last = _chatMessages.last;
     _chatMessages[_chatMessages.length - 1] = ChatMessage(
@@ -253,6 +267,10 @@ class SessionProvider with ChangeNotifier {
       role: last.role,
       content: content,
       timestamp: last.timestamp,
+      language: last.language,
+      model: last.model,
+      citation: last.citation,
+      generationSeconds: generationSeconds ?? last.generationSeconds,
     );
     notifyListeners();
   }

@@ -107,6 +107,52 @@ class OfflineAIService {
     }
   }
 
+  /// Creates a dedicated vision session for multimodal reasoning
+  DenizenVisionSession createVisionSession({String? systemPrompt}) {
+    return DenizenVisionSession(
+      systemPrompt: systemPrompt ??
+          'You are a brilliant academic research assistant with visual reasoning capabilities. '
+          'Analyze photos of textbook diagrams, science experiments, math formulas, historical maps, and documents accurately in clear markdown.',
+      aiService: _denizen.engine,
+    );
+  }
+
+  /// Generate streaming vision response from raw image bytes and user question
+  Stream<String> generateVisionStream({
+    required Uint8List imageBytes,
+    required String prompt,
+    String? systemPrompt,
+    int maxTokens = 512,
+    double temperature = 0.2,
+  }) async* {
+    if (!_denizen.isModelLoaded) {
+      throw Exception('No GGUF AI model loaded. Please activate a vision model in Settings.');
+    }
+    if (_denizen.engine.loadedMmprojPath == null) {
+      throw Exception('Loaded model is not a multimodal vision model. Please activate LFM2.5-VL in Settings.');
+    }
+
+    // Wait for active generation lock (FIFO sequence lock)
+    while (_activeLock != null) {
+      await _activeLock!.future;
+    }
+    final currentLock = Completer<void>();
+    _activeLock = currentLock;
+
+    try {
+      final session = createVisionSession(systemPrompt: systemPrompt);
+      yield* session.streamChat(
+        imageBytes: imageBytes,
+        message: prompt,
+        maxTokens: maxTokens,
+        temperature: temperature,
+      );
+    } finally {
+      _activeLock = null;
+      currentLock.complete();
+    }
+  }
+
   Future<String> generateResponse({
     required String prompt,
     required String systemPrompt,

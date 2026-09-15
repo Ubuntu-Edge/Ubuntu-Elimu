@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
+import 'package:denizen_ai/denizen_ai.dart' hide ChatMessage;
 import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/typography.dart';
 import '../../../../models/chat_message.dart';
@@ -6,206 +9,190 @@ import 'citation_card.dart';
 
 class ChatBubble extends StatelessWidget {
   final ChatMessage message;
+  final bool isStreaming;
   final VoidCallback? onCitationTap;
 
   const ChatBubble({
     super.key,
     required this.message,
+    this.isStreaming = false,
     this.onCitationTap,
   });
+
+  static final DenizenVoiceSession _voiceSession = DenizenVoiceSession();
+
+  Future<void> _speak(String text) async {
+    await _voiceSession.speak(text);
+  }
+
+  void _copyToClipboard(BuildContext context, String text) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Copied response to clipboard'),
+        duration: Duration(seconds: 2),
+        backgroundColor: UEColors.surface,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final isUser = message.role == MessageRole.user;
 
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.82,
-        ),
-        child: Column(
-          crossAxisAlignment:
-              isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-          children: [
-            if (!isUser) _AiLabel(),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-              decoration: BoxDecoration(
-                color: isUser ? UEColors.bgElevated : UEColors.bgCard,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(16),
-                  topRight: const Radius.circular(16),
-                  bottomLeft: Radius.circular(isUser ? 16 : 4),
-                  bottomRight: Radius.circular(isUser ? 4 : 16),
-                ),
-                border: Border.all(color: UEColors.bgBorder, width: 0.5),
-              ),
-              child: Text(
-                message.content,
-                style: UETypography.bodySm.copyWith(
-                  color: isUser ? UEColors.textPrimary : UEColors.textSecondary,
-                  fontSize: 13.5,
-                  height: 1.55,
-                ),
-              ),
+    if (isUser) {
+      return Align(
+        alignment: Alignment.centerRight,
+        child: Container(
+          margin: const EdgeInsets.only(left: 48, bottom: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: UEColors.indigo.withOpacity(0.18),
+            border: Border.all(color: UEColors.indigo.withOpacity(0.3), width: 0.5),
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(16),
+              topRight: Radius.circular(16),
+              bottomLeft: Radius.circular(16),
+              bottomRight: Radius.circular(4),
             ),
-            if (message.citation != null)
-              CitationCard(
-                citation: message.citation!,
-                onTap: onCitationTap,
-              ),
-            const SizedBox(height: 3),
-            _MetaRow(message: message),
-          ],
+          ),
+          child: Text(
+            message.content,
+            style: UETypography.inter(
+              fontSize: 14,
+              color: UEColors.textPrimary,
+              height: 1.4,
+            ),
+          ),
         ),
-      ),
-    );
-  }
-}
+      );
+    }
 
-class _AiLabel extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+    // AI Response Bubble — Identical to AI Research Bubble Aesthetic
+    return Container(
+      margin: const EdgeInsets.only(right: 24, bottom: 8),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 18,
-            height: 18,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: UEColors.bgElevated,
-              border: Border.all(color: UEColors.indigo, width: 0.5),
-            ),
-            child: const Icon(Icons.auto_awesome_rounded,
-                size: 10, color: UEColors.indigo),
-          ),
-          const SizedBox(width: 5),
-          Text(
-            'Elimu',
-            style: UETypography.label.copyWith(
-              color: UEColors.indigo,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MetaRow extends StatelessWidget {
-  final ChatMessage message;
-
-  const _MetaRow({required this.message});
-
-  String _formatTime(DateTime dt) {
-    final h = dt.hour > 12 ? dt.hour - 12 : dt.hour == 0 ? 12 : dt.hour;
-    final m = dt.minute.toString().padLeft(2, '0');
-    final period = dt.hour >= 12 ? 'PM' : 'AM';
-    return '$h:$m $period';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final parts = <String>[_formatTime(message.timestamp)];
-    if (message.model != null) parts.add(message.model!.label);
-    if (message.language != null) parts.add(message.language!.label);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Text(
-        parts.join(' · '),
-        style: UETypography.caption.copyWith(fontSize: 10),
-      ),
-    );
-  }
-}
-
-class TypingIndicator extends StatefulWidget {
-  const TypingIndicator({super.key});
-
-  @override
-  State<TypingIndicator> createState() => _TypingIndicatorState();
-}
-
-class _TypingIndicatorState extends State<TypingIndicator>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _AiLabel(),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            width: 32,
+            height: 32,
             decoration: BoxDecoration(
-              color: UEColors.bgCard,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(16),
-                topRight: Radius.circular(16),
-                bottomLeft: Radius.circular(4),
-                bottomRight: Radius.circular(16),
-              ),
-              border: Border.all(color: UEColors.bgBorder, width: 0.5),
+              color: UEColors.surface,
+              shape: BoxShape.circle,
+              border: Border.all(color: UEColors.border, width: 0.5),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(3, (i) {
-                return AnimatedBuilder(
-                  animation: _controller,
-                  builder: (_, __) {
-                    final offset = Curves.easeInOut.transform(
-                      (((_controller.value * 3) - i).clamp(0.0, 1.0)),
-                    );
-                    final bounce = i % 2 == 0
-                        ? offset < 0.5
-                            ? offset * 2
-                            : (1 - offset) * 2
-                        : offset < 0.5
-                            ? offset * 2
-                            : (1 - offset) * 2;
-                    return Padding(
-                      padding: EdgeInsets.only(right: i < 2 ? 4 : 0),
-                      child: Transform.translate(
-                        offset: Offset(0, -4 * bounce),
-                        child: Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: UEColors.indigo
-                                .withOpacity(0.4 + 0.6 * bounce),
+            child: const Icon(
+              TablerIcons.sparkles,
+              size: 16,
+              color: UEColors.accent,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Elimu Tutor',
+                      style: UETypography.spaceGrotesk(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: UEColors.textMuted,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (!isStreaming && message.content.isNotEmpty) ...[
+                      IconButton(
+                        onPressed: () => _speak(message.content),
+                        icon: const Icon(TablerIcons.volume, size: 16, color: UEColors.accent),
+                        tooltip: 'Read Aloud',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: () => _copyToClipboard(context, message.content),
+                        icon: const Icon(TablerIcons.copy, size: 16, color: UEColors.textMuted),
+                        tooltip: 'Copy',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: UEColors.surface,
+                    border: Border.all(color: UEColors.border, width: 0.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (message.content.isEmpty && isStreaming)
+                        Row(
+                          children: [
+                            const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: UEColors.accent,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              'Thinking…',
+                              style: UETypography.inter(
+                                fontSize: 13,
+                                color: UEColors.textMuted,
+                              ),
+                            ),
+                          ],
+                        )
+                      else
+                        SelectableText(
+                          message.content,
+                          style: UETypography.inter(
+                            fontSize: 14,
+                            color: UEColors.textPrimary,
+                            height: 1.5,
                           ),
                         ),
-                      ),
-                    );
-                  },
-                );
-              }),
+                      if (message.citation != null) ...[
+                        const SizedBox(height: 10),
+                        CitationCard(
+                          citation: message.citation!,
+                          onTap: onCitationTap,
+                        ),
+                      ],
+                      if (message.generationSeconds != null && !isStreaming) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.timer_outlined, size: 12, color: Colors.teal.shade300),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Generated in ${message.generationSeconds!.toStringAsFixed(1)}s',
+                              style: UETypography.caption.copyWith(
+                                color: Colors.teal.shade300,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ],

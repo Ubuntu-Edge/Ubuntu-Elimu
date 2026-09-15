@@ -51,6 +51,7 @@ class ChatMessage {
   final Language? language;
   final ModelMode? model;
   final CitationRef? citation;
+  final double? generationSeconds;
 
   const ChatMessage({
     required this.id,
@@ -60,5 +61,6 @@ class ChatMessage {
     this.language,
     this.model,
     this.citation,
+    this.generationSeconds,
   });
 }

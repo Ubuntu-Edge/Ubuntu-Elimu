@@ -1,11 +1,13 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
-import '../../../providers/document_provider.dart';
 import '../../../providers/offline_model_provider.dart';
 import '../../../services/offline_ai_service.dart';
 import 'package:denizen_ai/denizen_ai.dart' hide OfflineAIService;
@@ -17,6 +19,9 @@ class ResearchMessage {
   final DateTime timestamp;
   final List<String>? sources;
   final bool isStreaming;
+  final Uint8List? imageBytes;
+  final String? imageName;
+  final String? latency;
 
   ResearchMessage({
     required this.id,
@@ -25,12 +30,18 @@ class ResearchMessage {
     required this.timestamp,
     this.sources,
     this.isStreaming = false,
+    this.imageBytes,
+    this.imageName,
+    this.latency,
   });
 
   ResearchMessage copyWith({
     String? text,
     bool? isStreaming,
     List<String>? sources,
+    Uint8List? imageBytes,
+    String? imageName,
+    String? latency,
   }) {
     return ResearchMessage(
       id: id,
@@ -39,6 +50,9 @@ class ResearchMessage {
       timestamp: timestamp,
       sources: sources ?? this.sources,
       isStreaming: isStreaming ?? this.isStreaming,
+      imageBytes: imageBytes ?? this.imageBytes,
+      imageName: imageName ?? this.imageName,
+      latency: latency ?? this.latency,
     );
   }
 }
@@ -55,10 +69,18 @@ class _ResearchScreenState extends State<ResearchScreen> {
   final ScrollController _scrollController = ScrollController();
   final List<ResearchMessage> _messages = [];
   final DenizenVoiceSession _voiceSession = DenizenVoiceSession();
-  
+  late final DenizenVisionSession _visionSession =
+      DenizenVisionSession(aiService: DenizenAI().engine);
+
+  Uint8List? _attachedImageBytes;
+  String? _attachedImageName;
+  Uint8List? _activeConversationImage;
+
   bool _isGenerating = false;
   bool _isListening = false;
-  bool _useLibraryGrounding = true;
+  bool _isLoadingVisionModel = false;
+  double _modelDownloadProgress = 0.0;
+  String _modelStatusMessage = "";
   String? _error;
   StreamSubscription<String>? _streamSub;
 
@@ -72,27 +94,120 @@ class _ResearchScreenState extends State<ResearchScreen> {
     super.dispose();
   }
 
+  Future<void> _pickImageFromDevice() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+        withData: true,
+      );
+      if (result != null && result.files.isNotEmpty) {
+        final picked = result.files.first;
+        Uint8List? bytes = picked.bytes;
+        if (bytes == null && picked.path != null) {
+          final file = File(picked.path!);
+          if (await file.exists()) {
+            bytes = await file.readAsBytes();
+          }
+        }
+
+        if (bytes != null && bytes.isNotEmpty) {
+          setState(() {
+            _attachedImageBytes = bytes;
+            _attachedImageName = picked.name;
+            _error = null;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = 'Could not select image: $e');
+      }
+    }
+  }
+
+  void _clearAttachedImage() {
+    setState(() {
+      _attachedImageBytes = null;
+      _attachedImageName = null;
+    });
+  }
+
+  Future<void> _activateVisionModel() async {
+    final modelProvider = context.read<OfflineModelProvider>();
+    setState(() {
+      _isLoadingVisionModel = true;
+      _modelDownloadProgress = 0.0;
+      _modelStatusMessage = "Activating LFM2.5-VL Vision AI...";
+      _error = null;
+    });
+
+    try {
+      final visionModel = DefaultOfflineModels.getUltraLightVisionModel();
+      await DenizenAI().models.load(
+        visionModel.id,
+        requireWifi: false,
+        onProgress: (p) {
+          setState(() {
+            _modelDownloadProgress = p.progress;
+            _modelStatusMessage =
+                "Downloading Vision Model: ${(p.percent).toStringAsFixed(1)}% (${(p.bytesDownloaded / (1024 * 1024)).toStringAsFixed(1)} MB / ${(p.totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB)";
+          });
+        },
+      );
+      await modelProvider.setActiveModel(visionModel);
+      setState(() {
+        _modelStatusMessage = "Vision Model Ready!";
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('LFM2.5-VL Vision Model activated successfully!'),
+            backgroundColor: UEColors.indigo,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _error = 'Failed to activate vision model: $e';
+      });
+    } finally {
+      setState(() {
+        _isLoadingVisionModel = false;
+      });
+    }
+  }
+
   Future<void> _toggleListening() async {
     if (_isListening) {
       await _voiceSession.stopListening();
-      setState(() => _isListening = false);
+      if (mounted) setState(() => _isListening = false);
     } else {
-      setState(() => _isListening = true);
+      if (mounted) setState(() => _isListening = true);
       try {
         await _voiceSession.startListening(
+          initialText: _textController.text,
+          onListeningChanged: (listening) {
+            if (mounted) setState(() => _isListening = listening);
+          },
           onResult: (text) {
-            if (text.isNotEmpty) {
+            if (mounted && text.isNotEmpty) {
               setState(() {
                 _textController.text = text;
+                _textController.selection = TextSelection.fromPosition(
+                  TextPosition(offset: _textController.text.length),
+                );
               });
             }
           },
         );
       } catch (e) {
-        setState(() {
-          _isListening = false;
-          _error = 'Microphone notice: $e';
-        });
+        if (mounted) {
+          setState(() {
+            _isListening = false;
+            _error = 'Microphone notice: $e';
+          });
+        }
       }
     }
   }
@@ -115,20 +230,45 @@ class _ResearchScreenState extends State<ResearchScreen> {
 
   void _clearChat() {
     _streamSub?.cancel();
+    _visionSession.clearHistory();
     setState(() {
       _messages.clear();
+      _attachedImageBytes = null;
+      _attachedImageName = null;
+      _activeConversationImage = null;
       _isGenerating = false;
       _error = null;
     });
   }
 
-  Future<void> _sendMessage(String userPrompt) async {
-    final trimmed = userPrompt.trim();
-    if (trimmed.isEmpty || _isGenerating) return;
+  Future<void> _sendMessage([String? overrideText]) async {
+    final rawText = overrideText ?? _textController.text;
+    final hasImage = _attachedImageBytes != null;
+    final hasActiveVisualContext = _activeConversationImage != null;
+
+    String prompt = rawText.trim();
+    if (prompt.isEmpty && !hasImage) return;
+
+    // If only image was attached without text, default to an intelligent research prompt
+    if (prompt.isEmpty && hasImage) {
+      prompt =
+          "Analyze and research this image in detail. Explain all visible diagrams, equations, specimens, text, or objects clearly.";
+    }
+
+    if (_isGenerating) return;
 
     final modelProvider = context.read<OfflineModelProvider>();
     if (!modelProvider.hasActiveModel) {
-      setState(() => _error = 'No AI model loaded — activate one in Settings first.');
+      setState(() => _error = 'No AI model loaded — activate one in Settings or below.');
+      return;
+    }
+
+    final Uint8List? imageToSend = _attachedImageBytes ?? _activeConversationImage;
+    final isMultimodalQuery = imageToSend != null;
+
+    if (isMultimodalQuery && !modelProvider.hasVisionLoaded) {
+      setState(() => _error =
+          'Image analysis requires the LFM2.5-VL Multimodal Vision model. Tap "Activate Vision AI" above.');
       return;
     }
 
@@ -136,9 +276,11 @@ class _ResearchScreenState extends State<ResearchScreen> {
 
     final userMsg = ResearchMessage(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      text: trimmed,
+      text: prompt,
       isUser: true,
       timestamp: DateTime.now(),
+      imageBytes: _attachedImageBytes,
+      imageName: _attachedImageName,
     );
 
     final aiMsgId = (DateTime.now().millisecondsSinceEpoch + 1).toString();
@@ -155,80 +297,115 @@ class _ResearchScreenState extends State<ResearchScreen> {
       _messages.add(userMsg);
       _messages.add(aiMsg);
       _isGenerating = true;
+      if (_attachedImageBytes != null) {
+        _activeConversationImage = _attachedImageBytes;
+        _attachedImageBytes = null;
+        _attachedImageName = null;
+      }
     });
     _scrollToBottom();
 
-    // Collect grounding context from library docs if enabled
-    List<String> contextChunks = [];
-    List<String> sourceNames = [];
-
-    if (_useLibraryGrounding) {
-      final docProvider = context.read<DocumentProvider>();
-      final related = docProvider.findRelevantAcrossLibrary(trimmed);
-      contextChunks = related.expand((e) => e.value).toList();
-      sourceNames = related.map((e) => e.key.name).toList();
-    }
-
-    String groundedContext = contextChunks.join("\n\n---\n\n");
-    if (groundedContext.length > 1800) {
-      groundedContext = groundedContext.substring(0, 1800);
-    }
-
-    final systemPrompt = groundedContext.isNotEmpty
-        ? 'You are a brilliant research assistant. Provide thorough, well-structured, '
-            'accurate answers formatted in clear markdown. Always match and respond in the exact language of the user prompt (e.g. Swahili, French, English). Ground your response in the '
-            'following study documents:\n\n$groundedContext'
-        : 'You are a brilliant research assistant. Provide thorough, well-structured, '
-            'accurate, and engaging answers formatted in clear markdown. Always match and respond fluently in the exact language of the user prompt (e.g. Swahili, French, English).';
+    final sw = Stopwatch()..start();
 
     try {
-      final stream = OfflineAIService.instance.generateResponseStream(
-        prompt: trimmed,
-        systemPrompt: systemPrompt,
-        maxTokens: 1000,
-        temperature: 0.7,
-      );
+      if (isMultimodalQuery) {
+        // ── Multimodal Neural Vision Inference ─────────────────────────
+        final stream = _visionSession.streamChat(
+          imageBytes: imageToSend,
+          message: prompt,
+          maxTokens: 1000,
+          temperature: 0.2,
+        );
 
-      String accumulated = '';
-
-      _streamSub = stream.listen(
-        (chunk) {
+        String accumulated = '';
+        await for (final chunk in stream) {
           accumulated += chunk;
-          setState(() {
-            final idx = _messages.indexWhere((m) => m.id == aiMsgId);
-            if (idx != -1) {
-              _messages[idx] = _messages[idx].copyWith(
-                text: accumulated,
-                sources: sourceNames.isNotEmpty ? sourceNames : null,
-              );
-            }
-          });
-          _scrollToBottom();
-        },
-        onError: (err) {
-          setState(() {
-            _isGenerating = false;
-            _error = 'Error stream: $err';
-          });
-        },
-        onDone: () {
+          if (mounted) {
+            setState(() {
+              final idx = _messages.indexWhere((m) => m.id == aiMsgId);
+              if (idx != -1) {
+                _messages[idx] = _messages[idx].copyWith(text: accumulated);
+              }
+            });
+            _scrollToBottom();
+          }
+        }
+
+        sw.stop();
+        final sec = (sw.elapsedMilliseconds / 1000.0).toStringAsFixed(1);
+        if (mounted) {
           setState(() {
             final idx = _messages.indexWhere((m) => m.id == aiMsgId);
             if (idx != -1) {
               _messages[idx] = _messages[idx].copyWith(
                 isStreaming: false,
-                sources: sourceNames.isNotEmpty ? sourceNames : null,
+                latency: "${sec}s (${sw.elapsedMilliseconds} ms)",
               );
             }
             _isGenerating = false;
           });
-        },
-      );
+        }
+      } else {
+        // ── Standard Text Neural Inference ────────────────────────────
+        const systemPrompt =
+            'You are a brilliant academic research assistant. Provide thorough, well-structured, '
+            'accurate, and engaging answers formatted in clear markdown. Always match and respond fluently in the exact language of the user prompt.';
+
+        final stream = OfflineAIService.instance.generateResponseStream(
+          prompt: prompt,
+          systemPrompt: systemPrompt,
+          maxTokens: 1000,
+          temperature: 0.7,
+        );
+
+        String accumulated = '';
+        _streamSub = stream.listen(
+          (chunk) {
+            accumulated += chunk;
+            if (mounted) {
+              setState(() {
+                final idx = _messages.indexWhere((m) => m.id == aiMsgId);
+                if (idx != -1) {
+                  _messages[idx] = _messages[idx].copyWith(text: accumulated);
+                }
+              });
+              _scrollToBottom();
+            }
+          },
+          onError: (err) {
+            if (mounted) {
+              setState(() {
+                _isGenerating = false;
+                _error = 'Error stream: $err';
+              });
+            }
+          },
+          onDone: () {
+            sw.stop();
+            final sec = (sw.elapsedMilliseconds / 1000.0).toStringAsFixed(1);
+            if (mounted) {
+              setState(() {
+                final idx = _messages.indexWhere((m) => m.id == aiMsgId);
+                if (idx != -1) {
+                  _messages[idx] = _messages[idx].copyWith(
+                    isStreaming: false,
+                    latency: "${sec}s (${sw.elapsedMilliseconds} ms)",
+                  );
+                }
+                _isGenerating = false;
+              });
+            }
+          },
+        );
+      }
     } catch (e) {
-      setState(() {
-        _isGenerating = false;
-        _error = 'Failed to generate response: $e';
-      });
+      sw.stop();
+      if (mounted) {
+        setState(() {
+          _isGenerating = false;
+          _error = 'Failed to generate response: $e';
+        });
+      }
     }
   }
 
@@ -246,13 +423,18 @@ class _ResearchScreenState extends State<ResearchScreen> {
   @override
   Widget build(BuildContext context) {
     final modelProvider = context.watch<OfflineModelProvider>();
+    final bool isVisionReady = modelProvider.hasVisionLoaded;
 
     return Scaffold(
       backgroundColor: UEColors.bgPrimary,
       body: Column(
         children: [
-          // ChatGPT Header Bar
+          // Header Bar
           _buildHeader(modelProvider),
+
+          // Vision Model Activation Banner (if needed)
+          if (!isVisionReady && (_attachedImageBytes != null || _isLoadingVisionModel))
+            _buildVisionActivationBanner(),
 
           if (_error != null)
             Container(
@@ -262,6 +444,7 @@ class _ResearchScreenState extends State<ResearchScreen> {
               decoration: BoxDecoration(
                 color: UEColors.pdfBg,
                 borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: UEColors.pdfFg.withOpacity(0.3)),
               ),
               child: Row(
                 children: [
@@ -272,6 +455,12 @@ class _ResearchScreenState extends State<ResearchScreen> {
                       _error!,
                       style: UETypography.inter(fontSize: 11, color: UEColors.pdfFg),
                     ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 16, color: UEColors.pdfFg),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => setState(() => _error = null),
                   ),
                 ],
               ),
@@ -284,6 +473,9 @@ class _ResearchScreenState extends State<ResearchScreen> {
                 : _buildMessageList(),
           ),
 
+          // Attached Image Preview Pill (if an image is selected)
+          if (_attachedImageBytes != null) _buildAttachedImagePill(),
+
           // Floating Input Bar
           _buildInputBar(modelProvider),
         ],
@@ -292,7 +484,9 @@ class _ResearchScreenState extends State<ResearchScreen> {
   }
 
   Widget _buildHeader(OfflineModelProvider modelProvider) {
-    final activeModelName = modelProvider.activeModel?.name ?? 'No Model Active';
+    final activeModelName = modelProvider.activeModel?.name ??
+        (DenizenAI().engine.loadedModel?.name ?? 'No Model Active');
+    final hasVision = modelProvider.hasVisionLoaded;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
@@ -305,12 +499,14 @@ class _ResearchScreenState extends State<ResearchScreen> {
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: UEColors.indigo.withOpacity(0.12),
+              color: hasVision
+                  ? Colors.purple.withOpacity(0.15)
+                  : UEColors.indigo.withOpacity(0.12),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(
-              TablerIcons.sparkles,
-              color: UEColors.indigo,
+            child: Icon(
+              hasVision ? TablerIcons.eye : TablerIcons.sparkles,
+              color: hasVision ? Colors.purpleAccent : UEColors.indigo,
               size: 20,
             ),
           ),
@@ -318,13 +514,36 @@ class _ResearchScreenState extends State<ResearchScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'AI Research',
-                style: UETypography.spaceGrotesk(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: UEColors.textPrimary,
-                ),
+              Row(
+                children: [
+                  Text(
+                    'AI Research',
+                    style: UETypography.spaceGrotesk(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: UEColors.textPrimary,
+                    ),
+                  ),
+                  if (hasVision) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.purpleAccent.withOpacity(0.4)),
+                      ),
+                      child: const Text(
+                        'VISION',
+                        style: TextStyle(
+                          color: Colors.purpleAccent,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
               Text(
                 activeModelName,
@@ -336,6 +555,11 @@ class _ResearchScreenState extends State<ResearchScreen> {
             ],
           ),
           const Spacer(),
+          IconButton(
+            onPressed: _pickImageFromDevice,
+            icon: const Icon(TablerIcons.photo_plus, size: 20, color: UEColors.accent),
+            tooltip: 'Upload Image for Analysis',
+          ),
           if (_messages.isNotEmpty)
             IconButton(
               onPressed: _clearChat,
@@ -347,13 +571,151 @@ class _ResearchScreenState extends State<ResearchScreen> {
     );
   }
 
+  Widget _buildVisionActivationBanner() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.purple.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.purpleAccent.withOpacity(0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(TablerIcons.eye, color: Colors.purpleAccent, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "Vision analysis requires LFM2.5-VL multimodal weights (~322 MB)",
+                  style: UETypography.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.purpleAccent,
+                  ),
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: _isLoadingVisionModel ? null : _activateVisionModel,
+                icon: const Icon(Icons.bolt, size: 14),
+                label: const Text("Activate Vision AI", style: TextStyle(fontSize: 11)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.purple,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ],
+          ),
+          if (_isLoadingVisionModel) ...[
+            const SizedBox(height: 8),
+            LinearProgressIndicator(value: _modelDownloadProgress),
+            const SizedBox(height: 4),
+            Text(
+              _modelStatusMessage,
+              style: const TextStyle(fontSize: 10, color: Colors.purpleAccent),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAttachedImagePill() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: UEColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.purpleAccent.withOpacity(0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.memory(
+                  _attachedImageBytes!,
+                  width: 44,
+                  height: 44,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _attachedImageName ?? 'Attached Image',
+                      style: UETypography.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: UEColors.textPrimary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      "${(_attachedImageBytes!.length / 1024).toStringAsFixed(1)} KB • Multi-tile ready for reasoning",
+                      style: UETypography.inter(
+                        fontSize: 10,
+                        color: Colors.purpleAccent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: _clearAttachedImage,
+                icon: const Icon(Icons.close, size: 18, color: UEColors.textMuted),
+                tooltip: 'Remove Attachment',
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // Visual Suggestion Chips
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildQuickChip("📐 Solve math / equation", "Solve and explain this math problem step by step with clear reasoning."),
+                _buildQuickChip("🧬 Explain diagram", "Explain all labeled parts and principles shown in this diagram in detail."),
+                _buildQuickChip("📝 Transcribe all text", "Read and transcribe all visible text, formulas, and labels in this image."),
+                _buildQuickChip("🔍 Detailed analysis", "Analyze and summarize all key observations and data in this image."),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickChip(String label, String prompt) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: ActionChip(
+        label: Text(label, style: const TextStyle(fontSize: 10, color: Colors.white70)),
+        backgroundColor: UEColors.bgCard,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        onPressed: _isGenerating ? null : () => _sendMessage(prompt),
+      ),
+    );
+  }
+
   Widget _buildEmptyState(OfflineModelProvider modelProvider) {
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           Container(
             width: 64,
             height: 64,
@@ -363,7 +725,7 @@ class _ResearchScreenState extends State<ResearchScreen> {
               border: Border.all(color: UEColors.border, width: 0.5),
             ),
             child: const Icon(
-              TablerIcons.robot,
+              TablerIcons.sparkles,
               size: 32,
               color: UEColors.accent,
             ),
@@ -380,13 +742,43 @@ class _ResearchScreenState extends State<ResearchScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Ask any question. Get deep, structured answers powered 100% offline by your local Denizen engine.',
+            'Ask any academic question or upload photos of diagrams, math problems, handwritten notes, and science charts for 100% offline multimodal analysis.',
             textAlign: TextAlign.center,
             style: UETypography.inter(
               fontSize: 13,
               color: UEColors.textMuted,
               height: 1.4,
             ),
+          ),
+          const SizedBox(height: 24),
+
+          // Starter Action Cards
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: [
+              ActionChip(
+                avatar: const Icon(TablerIcons.photo_plus, size: 14, color: Colors.purpleAccent),
+                label: const Text('📸 Upload diagram / photo to analyze'),
+                onPressed: _pickImageFromDevice,
+              ),
+              ActionChip(
+                avatar: const Icon(TablerIcons.math_function, size: 14, color: UEColors.indigo),
+                label: const Text('📐 Explain Pythagorean Theorem'),
+                onPressed: () => _sendMessage("Can you explain the Pythagorean theorem and provide step-by-step examples?"),
+              ),
+              ActionChip(
+                avatar: const Icon(TablerIcons.dna, size: 14, color: Colors.greenAccent),
+                label: const Text('🌿 How photosynthesis works'),
+                onPressed: () => _sendMessage("Explain photosynthesis simply: what do plants need and what do they produce?"),
+              ),
+              ActionChip(
+                avatar: const Icon(TablerIcons.language, size: 14, color: Colors.amberAccent),
+                label: const Text('🇰🇪 Tofauti ya Nomino na Kitenzi'),
+                onPressed: () => _sendMessage("Eleza tofauti iliyopo kati ya Nomino na Kitenzi katika sarufi ya Kiswahili."),
+              ),
+            ],
           ),
         ],
       ),
@@ -422,13 +814,29 @@ class _ResearchScreenState extends State<ResearchScreen> {
               bottomRight: Radius.circular(4),
             ),
           ),
-          child: Text(
-            msg.text,
-            style: UETypography.inter(
-              fontSize: 14,
-              color: UEColors.textPrimary,
-              height: 1.4,
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (msg.imageBytes != null) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.memory(
+                    msg.imageBytes!,
+                    height: 160,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              Text(
+                msg.text,
+                style: UETypography.inter(
+                  fontSize: 14,
+                  color: UEColors.textPrimary,
+                  height: 1.4,
+                ),
+              ),
+            ],
           ),
         ),
       );
@@ -469,6 +877,13 @@ class _ResearchScreenState extends State<ResearchScreen> {
                         color: UEColors.textMuted,
                       ),
                     ),
+                    if (msg.latency != null) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        '• ${msg.latency!}',
+                        style: const TextStyle(color: Colors.greenAccent, fontSize: 10),
+                      ),
+                    ],
                     const Spacer(),
                     if (!msg.isStreaming && msg.text.isNotEmpty) ...[
                       IconButton(
@@ -564,6 +979,7 @@ class _ResearchScreenState extends State<ResearchScreen> {
 
   Widget _buildInputBar(OfflineModelProvider modelProvider) {
     final isEnabled = modelProvider.hasActiveModel;
+    final hasImage = _attachedImageBytes != null;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -573,124 +989,95 @@ class _ResearchScreenState extends State<ResearchScreen> {
       ),
       child: SafeArea(
         top: false,
-        child: Column(
+        child: Row(
           children: [
-            // Library Grounding Pill
-            Row(
-              children: [
-                GestureDetector(
-                  onTap: () => setState(() => _useLibraryGrounding = !_useLibraryGrounding),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: _useLibraryGrounding
-                          ? UEColors.accent.withOpacity(0.12)
-                          : UEColors.surface,
-                      border: Border.all(
-                        color: _useLibraryGrounding ? UEColors.accent : UEColors.border,
-                        width: 0.5,
-                      ),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          TablerIcons.books,
-                          size: 14,
-                          color: _useLibraryGrounding ? UEColors.accent : UEColors.textMuted,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          _useLibraryGrounding ? 'Library Grounding: ON' : 'Library Grounding: OFF',
-                          style: UETypography.inter(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                            color: _useLibraryGrounding ? UEColors.accent : UEColors.textMuted,
-                          ),
-                        ),
-                      ],
-                    ),
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                decoration: BoxDecoration(
+                  color: UEColors.surface,
+                  border: Border.all(
+                    color: _isListening
+                        ? UEColors.accent
+                        : (hasImage ? Colors.purpleAccent : UEColors.border),
+                    width: _isListening || hasImage ? 1.0 : 0.5,
                   ),
+                  borderRadius: BorderRadius.circular(24),
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-
-            // ChatGPT Style Input Field with Voice Mic Button
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: UEColors.surface,
-                      border: Border.all(
-                        color: _isListening ? UEColors.accent : UEColors.border,
-                        width: _isListening ? 1.0 : 0.5,
+                child: Row(
+                  children: [
+                    IconButton(
+                      onPressed: _isGenerating ? null : _pickImageFromDevice,
+                      icon: Icon(
+                        hasImage ? TablerIcons.photo_check : TablerIcons.photo,
+                        color: hasImage ? Colors.purpleAccent : UEColors.textMuted,
+                        size: 20,
                       ),
-                      borderRadius: BorderRadius.circular(24),
+                      tooltip: 'Attach Image / Diagram',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
                     ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _textController,
-                            enabled: isEnabled && !_isGenerating,
-                            minLines: 1,
-                            maxLines: 4,
-                            style: UETypography.inter(fontSize: 14, color: UEColors.textPrimary),
-                            decoration: InputDecoration(
-                              hintText: _isListening
-                                  ? 'Listening to speech...'
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _textController,
+                        enabled: isEnabled && !_isGenerating,
+                        minLines: 1,
+                        maxLines: 4,
+                        style: UETypography.inter(fontSize: 14, color: UEColors.textPrimary),
+                        decoration: InputDecoration(
+                          hintText: _isListening
+                              ? 'Listening to speech...'
+                              : hasImage
+                                  ? 'Ask anything about this image...'
                                   : isEnabled
                                       ? 'Ask anything (e.g. quantum physics, calculus)...'
                                       : 'Activate a model in Settings to ask...',
-                              hintStyle: UETypography.inter(
-                                fontSize: 13,
-                                color: _isListening ? UEColors.accent : UEColors.textMuted,
-                              ),
-                              border: InputBorder.none,
-                            ),
-                            onSubmitted: (val) => _sendMessage(val),
+                          hintStyle: UETypography.inter(
+                            fontSize: 13,
+                            color: _isListening
+                                ? UEColors.accent
+                                : (hasImage ? Colors.purpleAccent.withOpacity(0.7) : UEColors.textMuted),
                           ),
+                          border: InputBorder.none,
                         ),
-                        IconButton(
-                          onPressed: isEnabled ? _toggleListening : null,
-                          icon: Icon(
-                            _isListening ? TablerIcons.microphone_off : TablerIcons.microphone,
-                            color: _isListening ? UEColors.accent : UEColors.textMuted,
-                            size: 20,
-                          ),
-                          tooltip: _isListening ? 'Stop Listening' : 'Speak Prompt',
-                        ),
-                      ],
+                        onSubmitted: (val) => _sendMessage(val),
+                      ),
                     ),
-                  ),
+                    IconButton(
+                      onPressed: isEnabled ? _toggleListening : null,
+                      icon: Icon(
+                        _isListening ? TablerIcons.microphone_off : TablerIcons.microphone,
+                        color: _isListening ? UEColors.accent : UEColors.textMuted,
+                        size: 20,
+                      ),
+                      tooltip: _isListening ? 'Stop Listening' : 'Speak Prompt',
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                IconButton.filled(
-                  onPressed: isEnabled && !_isGenerating
-                      ? () => _sendMessage(_textController.text)
-                      : null,
-                  style: IconButton.styleFrom(
-                    backgroundColor: isEnabled && !_isGenerating ? UEColors.indigo : UEColors.surface,
-                    foregroundColor: Colors.white,
-                    shape: const CircleBorder(),
-                    padding: const EdgeInsets.all(12),
-                  ),
-                  icon: _isGenerating
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(TablerIcons.send, size: 18),
-                ),
-              ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton.filled(
+              onPressed: (isEnabled || hasImage) && !_isGenerating
+                  ? () => _sendMessage()
+                  : null,
+              style: IconButton.styleFrom(
+                backgroundColor: hasImage ? Colors.purple : (isEnabled && !_isGenerating ? UEColors.indigo : UEColors.surface),
+                foregroundColor: Colors.white,
+                shape: const CircleBorder(),
+                padding: const EdgeInsets.all(12),
+              ),
+              icon: _isGenerating
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(TablerIcons.send, size: 18),
             ),
           ],
         ),

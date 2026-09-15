@@ -55,6 +55,13 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool get isStreaming => _isStreaming;
   String? get error => _error;
   bool get hasActiveModel => _activeModel != null || _denizen.isModelLoaded;
+  bool get hasVisionLoaded => _denizen.isModelLoaded && _denizen.engine.loadedMmprojPath != null;
+
+  /// Loads the ultra-lightweight LFM2.5-VL vision model for image analysis and visual research
+  Future<void> loadDefaultVisionModel() async {
+    final visionModel = DefaultOfflineModels.getUltraLightVisionModel();
+    await setActiveModel(visionModel);
+  }
 
   /// Request necessary permissions for offline model loading
   Future<bool> _requestModelLoadingPermissions() async {
@@ -90,7 +97,7 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
       debugPrint('🚀 Initializing OfflineModelProvider with Denizen AI...');
       final prefs = await SharedPreferences.getInstance();
 
-      final defaultModels = DefaultOfflineModels.getEducationModels();
+      final defaultModels = DefaultOfflineModels.getAllRecommendedModels();
 
       final Map<String, OfflineModel> modelMap = {
         for (final m in defaultModels) m.id: m,

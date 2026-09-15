@@ -211,15 +211,16 @@ class _TutorScreenState extends State<TutorScreen> {
               child: ListView.separated(
                 controller: _scrollController,
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                itemCount: session.chatMessages.length + (session.isGenerating ? 1 : 0),
+                itemCount: session.chatMessages.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 16),
                 itemBuilder: (context, index) {
-                  if (index == session.chatMessages.length) {
-                    return const TypingIndicator();
-                  }
                   final msg = session.chatMessages[index];
+                  final isStreaming = session.isGenerating &&
+                      index == session.chatMessages.length - 1 &&
+                      msg.role == MessageRole.ai;
                   return ChatBubble(
                     message: msg,
+                    isStreaming: isStreaming,
                     onCitationTap: msg.citation != null ? () => _openCitation(msg.citation!) : null,
                   );
                 },

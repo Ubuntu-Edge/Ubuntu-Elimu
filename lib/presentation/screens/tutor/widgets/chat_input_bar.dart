@@ -44,21 +44,28 @@ class _ChatInputBarState extends State<ChatInputBar> {
   Future<void> _toggleListening() async {
     if (_isListening) {
       await _voiceSession.stopListening();
-      setState(() => _isListening = false);
+      if (mounted) setState(() => _isListening = false);
     } else {
-      setState(() => _isListening = true);
+      if (mounted) setState(() => _isListening = true);
       try {
         await _voiceSession.startListening(
+          initialText: _controller.text,
+          onListeningChanged: (listening) {
+            if (mounted) setState(() => _isListening = listening);
+          },
           onResult: (text) {
-            if (text.isNotEmpty) {
+            if (mounted && text.isNotEmpty) {
               setState(() {
                 _controller.text = text;
+                _controller.selection = TextSelection.fromPosition(
+                  TextPosition(offset: _controller.text.length),
+                );
               });
             }
           },
         );
       } catch (e) {
-        setState(() => _isListening = false);
+        if (mounted) setState(() => _isListening = false);
       }
     }
   }
@@ -90,7 +97,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
         ),
       ),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
         decoration: BoxDecoration(
           color: UEColors.bgCard,
           borderRadius: BorderRadius.circular(24),
@@ -100,7 +107,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 : _hasText
                     ? UEColors.indigo.withOpacity(0.4)
                     : UEColors.bgBorder,
-            width: 0.5,
+            width: _isListening ? 1.0 : 0.5,
           ),
         ),
         child: Row(
@@ -123,7 +130,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   ),
                   border: InputBorder.none,
                   isDense: true,
-                  contentPadding: EdgeInsets.zero,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
                 ),
               ),
             ),

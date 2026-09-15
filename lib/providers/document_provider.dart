@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'package:denizen_ai/denizen_ai.dart' hide OfflineAIService, DocumentIngestionService;
 import '../services/offline_ai_service.dart';
 import '../src/rag/device_tier.dart';
@@ -13,9 +14,11 @@ import '../models/document.dart';
 class _ExtractTaskArgs {
   final String path;
   final int typeIndex;
-  final int chunkWords; // tier-dependent
-  final int maxChunks; // tier-dependent
-  _ExtractTaskArgs(this.path, this.typeIndex, this.chunkWords, this.maxChunks);
+  final int chunkWords;
+  final int maxChunks;
+  // Pre-extracted text from main thread (Syncfusion can't run in isolate)
+  final String? preExtractedText;
+  _ExtractTaskArgs(this.path, this.typeIndex, this.chunkWords, this.maxChunks, {this.preExtractedText});
 }
 
 class _ExtractTaskResult {
@@ -34,13 +37,87 @@ class _ExtractTaskResult {
 /// this function — extraction branches on file content only. It's dead
 /// plumbing left for the Syncfusion PDF wiring, where pdf/docx/txt routing
 /// will need to live. Don't remove it until that work is done.
+String _extractPdfRegexFast(List<int> bytes) {
+  final rawStr = String.fromCharCodes(bytes);
+  final sb = StringBuffer();
+
+  final tjRegex = RegExp(r'\(([^)]+)\)\s*Tj', multiLine: true);
+  for (final m in tjRegex.allMatches(rawStr)) {
+    final g = m.group(1);
+    if (g != null && g.trim().isNotEmpty) {
+      sb.writeln(g.trim());
+    }
+  }
+
+  final arrayTjRegex = RegExp(r'\[\s*(((?:\([^)]+\)\s*|-?\d+\s*)+))\]\s*TJ', multiLine: true);
+  for (final m in arrayTjRegex.allMatches(rawStr)) {
+    final rawGroup = m.group(1) ?? '';
+    final innerRegex = RegExp(r'\(([^)]+)\)');
+    for (final inner in innerRegex.allMatches(rawGroup)) {
+      final text = inner.group(1);
+      if (text != null && text.trim().isNotEmpty) {
+        sb.write(text.trim());
+        sb.write(' ');
+      }
+    }
+    sb.writeln();
+  }
+
+  if (sb.length < 50) {
+    return _extractPrintableAscii(bytes);
+  }
+
+  return sb.toString();
+}
+
+String _extractPrintableAscii(List<int> bytes) {
+  final rawStr = String.fromCharCodes(bytes);
+  final asciiRegex = RegExp(r"[A-Za-z0-9\s.,!?:;()'-]{4,}");
+  final sb = StringBuffer();
+
+  for (final m in asciiRegex.allMatches(rawStr)) {
+    final s = m.group(0)!.trim();
+    if (s.length >= 4 &&
+        !s.startsWith('/Font') &&
+        !s.startsWith('/ProcSet') &&
+        !s.startsWith('/Type') &&
+        !s.startsWith('/Catalog') &&
+        !s.startsWith('/Pages')) {
+      sb.writeln(s);
+    }
+  }
+
+  return sb.toString();
+}
+
+// Runs in a background compute() isolate — NO platform channels allowed here.
+// Syncfusion must be called on the main thread before dispatching.
 _ExtractTaskResult _isolateExtractTask(_ExtractTaskArgs args) {
   try {
-    final file = File(args.path);
-    if (!file.existsSync()) return _ExtractTaskResult('', [], null);
+    String text = '';
 
-    final bytes = file.readAsBytesSync();
-    String text = String.fromCharCodes(bytes).trim();
+    // Use pre-extracted text if provided (PDF via Syncfusion on main thread)
+    if (args.preExtractedText != null && args.preExtractedText!.trim().isNotEmpty) {
+      text = args.preExtractedText!;
+    } else {
+      // Non-PDF plain text files — safe to read and decode in isolate
+      final file = File(args.path);
+      if (!file.existsSync()) return _ExtractTaskResult('', [], null);
+
+      final bytes = file.readAsBytesSync();
+      final ext = args.path.split('.').last.toLowerCase();
+
+      if (ext == 'pdf') {
+        // Syncfusion failed on main thread — try fast regex fallback
+        text = _extractPdfRegexFast(bytes);
+      } else {
+        try {
+          text = String.fromCharCodes(bytes).trim();
+        } catch (_) {
+          text = _extractPrintableAscii(bytes);
+        }
+      }
+    }
 
     if (text.trim().isEmpty) {
       final fileName = args.path.split('/').last.split('\\').last;
@@ -49,13 +126,12 @@ _ExtractTaskResult _isolateExtractTask(_ExtractTaskArgs args) {
 
     final sanitized = DocumentProvider.sanitizeText(text);
 
-    // Tier-dependent chunking: fewer/larger chunks on low-end hardware
-    // means fewer embedding calls later, at the cost of coarser retrieval.
+    // Tier-dependent chunking: window size matching performance tier
     final words = sanitized.split(RegExp(r'\s+'));
     final List<String> chunks = [];
     int start = 0;
     final chunkSize = args.chunkWords;
-    final overlap = (chunkSize * 0.15).round(); // ~15% overlap, scales with chunk size
+    final overlap = (chunkSize * 0.15).round();
 
     while (start < words.length) {
       final end = (start + chunkSize).clamp(0, words.length);
@@ -242,14 +318,32 @@ class DocumentProvider with ChangeNotifier {
 
     try {
       final config = DeviceTierConfig.forTier(_cachedDeviceTier);
+      final filePath = doc.filePath!;
+      final ext = filePath.split('.').last.toLowerCase();
 
+      // ── Step 1: Extract text on main thread (Syncfusion uses platform channels)
+      String? preExtractedText;
+      if (ext == 'pdf') {
+        try {
+          final bytes = await File(filePath).readAsBytes();
+          final pdfDoc = PdfDocument(inputBytes: bytes);
+          preExtractedText = PdfTextExtractor(pdfDoc).extractText();
+          pdfDoc.dispose();
+          debugPrint('✅ Syncfusion PDF extraction: ${preExtractedText.length} chars');
+        } catch (e) {
+          debugPrint('⚠️ Syncfusion main-thread PDF extraction failed: $e — will use regex fallback in isolate');
+        }
+      }
+
+      // ── Step 2: Dispatch chunking to background isolate (text-only, no platform channels)
       final res = await compute(
         _isolateExtractTask,
         _ExtractTaskArgs(
-          doc.filePath!,
+          filePath,
           doc.type.index,
           config.chunkWords,
           config.maxChunks,
+          preExtractedText: preExtractedText,
         ),
       );
 
@@ -375,32 +469,16 @@ class DocumentProvider with ChangeNotifier {
 
   List<String> _lexicalFallback(List<String> chunks, String query, int topK) {
     if (chunks.isEmpty) return [];
-    final queryLower = query.toLowerCase();
-    final queryWords = queryLower.split(RegExp(r'\s+')).where((w) => w.length > 2).toList();
+    final queryWords = query.toLowerCase().split(RegExp(r'\s+')).where((w) => w.length > 2).toSet();
 
-    final isSummaryRequest = queryLower.contains('summariz') ||
-        queryLower.contains('summaris') ||
-        queryLower.contains('summary') ||
-        queryLower.contains('overview') ||
-        queryLower.contains('about') ||
-        queryLower.contains('what is this') ||
-        queryLower.contains('tell me') ||
-        queryLower.contains('explain') ||
-        queryLower.contains('cv') ||
-        queryLower.contains('resume');
-
-    if (isSummaryRequest) {
-      return _capByLength(chunks);
+    if (queryWords.isEmpty) {
+      return _capByLength(chunks.take(topK).toList());
     }
 
     final scored = chunks.map((chunk) {
-      final lower = chunk.toLowerCase();
-      int score = 0;
-      for (final word in queryWords) {
-        if (lower.contains(word)) score += 3;
-      }
-      if (lower.contains(queryLower)) score += 10;
-      return MapEntry(chunk, score);
+      final chunkWords = chunk.toLowerCase().split(RegExp(r'\s+')).toSet();
+      final intersection = queryWords.intersection(chunkWords);
+      return MapEntry(chunk, intersection.length);
     }).toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
@@ -408,7 +486,6 @@ class DocumentProvider with ChangeNotifier {
     if (matched.isNotEmpty) {
       return _capByLength(matched);
     }
-    // If no keyword matches, return initial chunks so the model always has document grounding
     return _capByLength(chunks.take(topK).toList());
   }
 
