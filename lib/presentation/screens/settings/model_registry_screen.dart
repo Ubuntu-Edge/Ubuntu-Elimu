@@ -8,6 +8,7 @@ import 'dart:io';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
 import '../../../providers/offline_model_provider.dart';
+import 'widgets/custom_model_picker_dialog.dart';
 
 class ModelRegistryScreen extends StatefulWidget {
   const ModelRegistryScreen({super.key});
@@ -24,9 +25,6 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
     DefaultOfflineModels.getInspectionVisionModel(),
   ];
 
-  String? _downloadingModelId;
-  double _downloadProgress = 0.0;
-  String _statusText = '';
   final Set<String> _downloadedModelIds = {};
   int _availableRamMB = -1;
 
@@ -67,56 +65,33 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
   }
 
   Future<void> _downloadAndLoadModel(OfflineModel model) async {
-    setState(() {
-      _downloadingModelId = model.id;
-      _downloadProgress = 0.0;
-      _statusText = 'Preparing ${model.name}...';
-    });
+    final provider = Provider.of<OfflineModelProvider>(context, listen: false);
 
     try {
       if (Platform.isAndroid && await Permission.notification.isDenied) {
         await Permission.notification.request();
       }
 
-      await _denizen.models.load(
-        model.id,
-        onProgress: (progress) {
-          if (mounted) {
-            setState(() {
-              _downloadProgress = progress.progress.clamp(0.0, 1.0);
-              _statusText =
-                  'Downloading: ${(progress.bytesDownloaded / (1024 * 1024)).toStringAsFixed(1)} MB / ${(progress.totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB (${progress.percent.toStringAsFixed(1)}%)';
-            });
-          }
-        },
-      );
+      // Delegate entirely to the provider — it manages all state
+      await provider.setActiveModel(model);
 
       if (!mounted) return;
-      final provider = Provider.of<OfflineModelProvider>(context, listen: false);
-      await provider.initialize();
       await _checkDownloadedModels();
+      if (!mounted) return;
 
-      if (mounted) {
-        setState(() {
-          _downloadingModelId = null;
-          _statusText = '✅ ${model.name} loaded into neural memory!';
-        });
-
+      if (provider.error != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✅ ${model.name} successfully activated!'),
-            backgroundColor: UEColors.green,
-            duration: const Duration(seconds: 4),
+            content: Text('Model action failed: ${provider.error}'),
+            backgroundColor: UEColors.pdfFg,
           ),
         );
+      } else {
+        _showSuccessDialog(model);
       }
     } catch (e) {
       await _checkDownloadedModels();
       if (mounted) {
-        setState(() {
-          _downloadingModelId = null;
-          _statusText = 'Error: $e';
-        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Model action failed: $e'),
@@ -129,6 +104,84 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
         await WakelockPlus.disable();
       } catch (_) {}
     }
+  }
+
+  void _showSuccessDialog(OfflineModel model) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 32),
+        decoration: const BoxDecoration(
+          color: UEColors.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: UEColors.greenBg,
+                shape: BoxShape.circle,
+                border: Border.all(color: UEColors.green.withValues(alpha: 0.4), width: 2),
+              ),
+              child: const Icon(TablerIcons.circle_check_filled, color: UEColors.green, size: 36),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Model Ready!',
+              style: UETypography.spaceGrotesk(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: UEColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${model.name} has been downloaded and loaded into the on-device AI engine.',
+              textAlign: TextAlign.center,
+              style: UETypography.inter(
+                fontSize: 13,
+                color: UEColors.textSecondary,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${model.sizeMB.toStringAsFixed(0)} MB · ${model.quantization ?? "Q4_K_M"} · ${model.author}',
+              style: UETypography.inter(
+                fontSize: 11,
+                color: UEColors.textMuted,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: UEColors.green,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 0,
+                ),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.pop(context); // Go back to the previous screen
+                },
+                child: Text(
+                  'Start Using AI',
+                  style: UETypography.inter(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildRamBar(int availableMB) {
@@ -172,7 +225,11 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final modelProvider = context.watch<OfflineModelProvider>();
     final loadedModelId = _denizen.engine.loadedModel?.id;
+    final downloadingModelId = modelProvider.downloadingModelId;
+    final statusText = modelProvider.downloadStatusText;
+    final downloadProgress = modelProvider.downloadProgressFraction;
 
     return Scaffold(
       backgroundColor: UEColors.bg,
@@ -191,6 +248,20 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
             color: UEColors.textPrimary,
           ),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Load Custom GGUF',
+            icon: const Icon(TablerIcons.file_import, color: UEColors.accent),
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (_) => CustomModelPickerDialog(
+                  onModelSelected: _checkDownloadedModels,
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16.0),
@@ -218,21 +289,21 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          if (_statusText.isNotEmpty) ...[
+          if (statusText.isNotEmpty) ...[
             Text(
-              _statusText,
+              statusText,
               style: UETypography.inter(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: _downloadingModelId != null ? UEColors.accent : UEColors.textPrimary,
+                color: downloadingModelId != null ? UEColors.accent : UEColors.textPrimary,
               ),
             ),
             const SizedBox(height: 8),
-            if (_downloadingModelId != null) ...[
+            if (downloadingModelId != null) ...[
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
-                  value: _downloadProgress > 0 ? _downloadProgress : null,
+                  value: downloadProgress > 0 ? downloadProgress : null,
                   backgroundColor: UEColors.iconBg,
                   color: UEColors.accent,
                   minHeight: 6,
@@ -241,6 +312,31 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
               const SizedBox(height: 16),
             ],
           ],
+          OutlinedButton.icon(
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (_) => CustomModelPickerDialog(
+                  onModelSelected: _checkDownloadedModels,
+                ),
+              );
+            },
+            icon: const Icon(TablerIcons.folder_open, size: 16, color: UEColors.accent),
+            label: Text(
+              'Load Custom GGUF from Device Storage',
+              style: UETypography.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: UEColors.accent,
+              ),
+            ),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: UEColors.border),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+          const SizedBox(height: 16),
           Text(
             'AVAILABLE OFFLINE MODELS',
             style: UETypography.inter(
@@ -253,7 +349,7 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
           const SizedBox(height: 12),
           ..._availableModels.map((model) {
             final isCurrentlyLoaded = loadedModelId == model.id;
-            final isDownloadingThis = _downloadingModelId == model.id;
+            final isDownloadingThis = downloadingModelId == model.id;
             final isDownloadedOnDisk = _downloadedModelIds.contains(model.id);
             final requiredRamMB = (model.sizeMB * 2.5).ceil();
 
@@ -403,7 +499,7 @@ class _ModelRegistryScreenState extends State<ModelRegistryScreen> {
                                         : 'DOWNLOAD & LOAD ENGINE',
                                 style: UETypography.inter(fontSize: 12, fontWeight: FontWeight.w600),
                               ),
-                              onPressed: _downloadingModelId != null ? null : () => _downloadAndLoadModel(model),
+                              onPressed: downloadingModelId != null ? null : () => _downloadAndLoadModel(model),
                             ),
                           ),
                         ),

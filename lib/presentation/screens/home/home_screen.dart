@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
 import 'widgets/session_resume_card.dart';
+import 'widgets/recent_chats_list.dart';
 import 'widgets/quick_action_grid.dart';
 import 'widgets/recent_uploads_list.dart';
 
@@ -19,6 +20,8 @@ class HomeScreen extends StatelessWidget {
           _buildGreeting(),
           const SizedBox(height: 24),
           const SessionResumeCard(),
+          const SizedBox(height: 20),
+          const RecentChatsList(),
           const SizedBox(height: 24),
           _buildSectionLabel('Quick actions'),
           const SizedBox(height: 12),

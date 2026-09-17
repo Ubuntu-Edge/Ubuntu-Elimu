@@ -21,8 +21,6 @@ class OfflineAIService {
       DocumentIngestionService(_embeddingProvider, _storageService);
   bool _isRagInitialized = false;
 
-  Completer<void>? _activeLock;
-
   TFLiteEmbeddingProvider get embeddingProvider => _embeddingProvider;
   VectorStorageService get storageService => _storageService;
   DocumentIngestionService get ingestionService => _ingestionService;
@@ -83,27 +81,15 @@ class OfflineAIService {
       throw Exception('No GGUF AI model loaded. Please activate a model in Settings.');
     }
 
-    // Wait for active generation lock (FIFO sequence lock)
-    while (_activeLock != null) {
-      await _activeLock!.future;
-    }
-    final currentLock = Completer<void>();
-    _activeLock = currentLock;
+    final session = _denizen.createSession(
+      systemPrompt: systemPrompt,
+      maxTokens: maxTokens,
+    );
 
-    try {
-      final session = _denizen.createSession(
-        systemPrompt: systemPrompt,
-        maxTokens: maxTokens,
-      );
+    final stream = session.streamChat(prompt);
 
-      final stream = session.streamChat(prompt);
-
-      await for (final token in stream) {
-        yield token;
-      }
-    } finally {
-      _activeLock = null;
-      currentLock.complete();
+    await for (final token in stream) {
+      yield token;
     }
   }
 
@@ -132,25 +118,13 @@ class OfflineAIService {
       throw Exception('Loaded model is not a multimodal vision model. Please activate LFM2.5-VL in Settings.');
     }
 
-    // Wait for active generation lock (FIFO sequence lock)
-    while (_activeLock != null) {
-      await _activeLock!.future;
-    }
-    final currentLock = Completer<void>();
-    _activeLock = currentLock;
-
-    try {
-      final session = createVisionSession(systemPrompt: systemPrompt);
-      yield* session.streamChat(
-        imageBytes: imageBytes,
-        message: prompt,
-        maxTokens: maxTokens,
-        temperature: temperature,
-      );
-    } finally {
-      _activeLock = null;
-      currentLock.complete();
-    }
+    final session = createVisionSession(systemPrompt: systemPrompt);
+    yield* session.streamChat(
+      imageBytes: imageBytes,
+      message: prompt,
+      maxTokens: maxTokens,
+      temperature: temperature,
+    );
   }
 
   Future<String> generateResponse({

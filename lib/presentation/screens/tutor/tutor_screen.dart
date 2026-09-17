@@ -12,6 +12,7 @@ import '../../../providers/settings_provider.dart';
 import 'widgets/chat_bubble.dart';
 import 'widgets/chat_input_bar.dart';
 import 'widgets/language_sheet.dart';
+import 'widgets/chat_history_sheet.dart';
 
 class TutorScreen extends StatefulWidget {
   const TutorScreen({super.key});
@@ -21,6 +22,7 @@ class TutorScreen extends StatefulWidget {
 }
 
 class _TutorScreenState extends State<TutorScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ScrollController _scrollController = ScrollController();
 
   Language _language = Language.english;
@@ -168,6 +170,25 @@ class _TutorScreenState extends State<TutorScreen> {
     );
   }
 
+  String _formatTimestamp(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+
+    if (diff.inMinutes < 1) {
+      return 'Just now';
+    } else if (diff.inMinutes < 60) {
+      return '${diff.inMinutes}m ago';
+    } else if (diff.inHours < 24) {
+      return '${diff.inHours}h ago';
+    } else if (diff.inDays == 1) {
+      return 'Yesterday';
+    } else if (diff.inDays < 7) {
+      return '${diff.inDays}d ago';
+    } else {
+      return '${dt.day}/${dt.month}/${dt.year}';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = context.watch<SessionProvider>();
@@ -185,13 +206,15 @@ class _TutorScreenState extends State<TutorScreen> {
         : docs.documents.where((d) => d.id == session.activeDocumentId).firstOrNull;
 
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: UEColors.bgPrimary,
+      drawer: _buildHistoryDrawer(context, session),
       body: SafeArea(
         bottom: false,
         child: Column(
           children: [
-            // Research-style clean header bar (NO top back arrow)
-            _buildHeader(context, modelProvider),
+            // Clean header bar with History Drawer toggle
+            _buildHeader(context, session, modelProvider),
 
             if (!modelProvider.hasActiveModel)
               Container(
@@ -237,30 +260,24 @@ class _TutorScreenState extends State<TutorScreen> {
     );
   }
 
-  Widget _buildHeader(BuildContext context, OfflineModelProvider modelProvider) {
+  Widget _buildHeader(BuildContext context, SessionProvider session, OfflineModelProvider modelProvider) {
     final activeModelName = modelProvider.activeModel?.name ?? 'No Model Active';
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      padding: const EdgeInsets.fromLTRB(12, 10, 16, 10),
       decoration: const BoxDecoration(
         color: UEColors.bgPrimary,
         border: Border(bottom: BorderSide(color: UEColors.border, width: 0.5)),
       ),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: UEColors.accent.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(
-              TablerIcons.brain,
-              color: UEColors.accent,
-              size: 20,
-            ),
+          // History Drawer Menu Trigger
+          IconButton(
+            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+            icon: const Icon(TablerIcons.layout_sidebar, size: 22, color: UEColors.accent),
+            tooltip: 'Chat History Sidebar',
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 4),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -282,18 +299,29 @@ class _TutorScreenState extends State<TutorScreen> {
             ],
           ),
           const Spacer(),
+          // Previous Chats History button with count
+          IconButton(
+            onPressed: () => ChatHistorySheet.show(context),
+            icon: const Icon(TablerIcons.history, size: 20, color: UEColors.textMuted),
+            tooltip: 'Previous Chats (${session.sessions.length})',
+          ),
           // New Chat button
           IconButton(
             onPressed: () {
               context.read<SessionProvider>().startNewSession();
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Started new AI Tutor session'),
-                  duration: Duration(seconds: 2),
+                SnackBar(
+                  content: const Text('Started new chat. Previous chat saved.'),
+                  duration: const Duration(seconds: 3),
+                  action: SnackBarAction(
+                    label: 'History',
+                    textColor: UEColors.accent,
+                    onPressed: () => ChatHistorySheet.show(context),
+                  ),
                 ),
               );
             },
-            icon: const Icon(TablerIcons.plus, size: 20, color: UEColors.indigo),
+            icon: const Icon(TablerIcons.plus, size: 20, color: UEColors.accent),
             tooltip: 'New Chat Session',
           ),
           const SizedBox(width: 4),
@@ -343,7 +371,7 @@ class _TutorScreenState extends State<TutorScreen> {
       ),
       child: Row(
         children: [
-          // Select Document Chip (like Research page Library Grounding chip)
+          // Select Document Chip
           Expanded(
             child: GestureDetector(
               onTap: () => _showDocPicker(context, session, docs),
@@ -421,7 +449,199 @@ class _TutorScreenState extends State<TutorScreen> {
               ),
             ),
           ),
+
+          // Quick Chat History pill
+          if (session.sessions.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () => ChatHistorySheet.show(context),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: UEColors.surface,
+                  border: Border.all(color: UEColors.border, width: 0.5),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(TablerIcons.history, size: 14, color: UEColors.textMuted),
+                    const SizedBox(width: 4),
+                    Text(
+                      'History (${session.sessions.length})',
+                      style: UETypography.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: UEColors.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  /// History sidebar drawer for fast, intuitive conversation browsing
+  Widget _buildHistoryDrawer(BuildContext context, SessionProvider session) {
+    return Drawer(
+      backgroundColor: UEColors.bgPrimary,
+      child: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 16, 12),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: UEColors.accent.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(TablerIcons.history, color: UEColors.accent, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Chat History',
+                          style: UETypography.spaceGrotesk(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: UEColors.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          '${session.sessions.length} conversations',
+                          style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(TablerIcons.x, size: 20, color: UEColors.textMuted),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: UEColors.accent,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    session.startNewSession();
+                  },
+                  icon: const Icon(TablerIcons.plus, size: 16),
+                  label: const Text('New Chat', style: TextStyle(fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ),
+            const Divider(color: UEColors.border, height: 16),
+            Expanded(
+              child: session.sessions.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(TablerIcons.message_circle_off, size: 36, color: UEColors.textMuted),
+                          const SizedBox(height: 10),
+                          Text('No past chats yet', style: UETypography.spaceGrotesk(fontSize: 14, color: UEColors.textMuted)),
+                        ],
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      itemCount: session.sessions.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 6),
+                      itemBuilder: (ctx, idx) {
+                        final s = session.sessions[idx];
+                        final isActive = s.id == session.currentSessionId;
+
+                        return InkWell(
+                          onTap: () {
+                            session.switchSession(s.id);
+                            Navigator.pop(context);
+                          },
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: isActive ? UEColors.accent.withValues(alpha: 0.1) : UEColors.surface,
+                              border: Border.all(
+                                color: isActive ? UEColors.accent.withValues(alpha: 0.4) : UEColors.border,
+                                width: isActive ? 1.0 : 0.5,
+                              ),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  isActive ? TablerIcons.message_dots : TablerIcons.message_2,
+                                  size: 16,
+                                  color: isActive ? UEColors.accent : UEColors.textMuted,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        s.title,
+                                        style: UETypography.spaceGrotesk(
+                                          fontSize: 13,
+                                          fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                                          color: UEColors.textPrimary,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Row(
+                                        children: [
+                                          Text(
+                                            _formatTimestamp(s.updatedAt),
+                                            style: UETypography.inter(fontSize: 9.5, color: UEColors.textMuted),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          const Text('•', style: TextStyle(fontSize: 9.5, color: UEColors.textMuted)),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            '${s.messages.length} msgs',
+                                            style: UETypography.inter(fontSize: 9.5, color: UEColors.textMuted),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(TablerIcons.trash, size: 14, color: UEColors.textMuted),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  onPressed: () => session.deleteSession(s.id),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }

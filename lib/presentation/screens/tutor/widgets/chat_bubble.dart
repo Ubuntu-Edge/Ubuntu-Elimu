@@ -5,6 +5,8 @@ import 'package:denizen_ai/denizen_ai.dart' hide ChatMessage;
 import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/typography.dart';
 import '../../../../models/chat_message.dart';
+import '../../../../core/utils/text_sanitizer.dart';
+import '../../../widgets/ue_markdown_text.dart';
 import 'citation_card.dart';
 
 class ChatBubble extends StatelessWidget {
@@ -22,11 +24,11 @@ class ChatBubble extends StatelessWidget {
   static final DenizenVoiceSession _voiceSession = DenizenVoiceSession();
 
   Future<void> _speak(String text) async {
-    await _voiceSession.speak(text);
+    await _voiceSession.speak(TextSanitizer.cleanOutput(text));
   }
 
   void _copyToClipboard(BuildContext context, String text) {
-    Clipboard.setData(ClipboardData(text: text));
+    Clipboard.setData(ClipboardData(text: TextSanitizer.cleanOutput(text)));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Copied response to clipboard'),
@@ -156,14 +158,7 @@ class ChatBubble extends StatelessWidget {
                           ],
                         )
                       else
-                        SelectableText(
-                          message.content,
-                          style: UETypography.inter(
-                            fontSize: 14,
-                            color: UEColors.textPrimary,
-                            height: 1.5,
-                          ),
-                        ),
+                        UEMarkdownText(message.content),
                       if (message.citation != null) ...[
                         const SizedBox(height: 10),
                         CitationCard(

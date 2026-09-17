@@ -42,6 +42,8 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   String? _downloadingModelId;
   String? _lastErrorModelId;
+  String _downloadStatusText = '';
+  double _downloadProgressFraction = 0.0;
   void Function(String modelName, String message)? onLoadError;
 
   // Getters
@@ -50,6 +52,8 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
   String? get downloadingModelId => _downloadingModelId;
   String? get lastErrorModelId => _lastErrorModelId;
   String? get loadedModelId => _denizen.engine.loadedModel?.id ?? _activeModel?.id;
+  String get downloadStatusText => _downloadStatusText;
+  double get downloadProgressFraction => _downloadProgressFraction;
   bool get isContextLoading => _isContextLoading;
   bool get isInferencing => _isInferencing;
   bool get isStreaming => _isStreaming;
@@ -179,6 +183,8 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
     _error = null;
     _downloadingModelId = model.id;
     _isContextLoading = true;
+    _downloadStatusText = 'Preparing ${model.name}...';
+    _downloadProgressFraction = 0.0;
     notifyListeners();
 
     try {
@@ -190,11 +196,30 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
         onProgress: (progress) {
           final fraction = progress.progress.clamp(0.0, 1.0);
           final isDownloaded = fraction >= 0.999;
-          _updateModelProgress(model.id, fraction, isDownloaded);
+          _downloadProgressFraction = fraction;
+          if (fraction < 0.999) {
+            _downloadStatusText =
+                'Downloading: ${(progress.bytesDownloaded / (1024 * 1024)).toStringAsFixed(1)} MB / '
+                '${(progress.totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB '
+                '(${progress.percent.toStringAsFixed(1)}%)';
+          } else {
+            _downloadStatusText = 'Loading ${model.name} into neural memory...';
+          }
+          // Update model list
+          final index = _models.indexWhere((m) => m.id == model.id);
+          if (index != -1) {
+            _models[index] = _models[index].copyWith(
+              downloadProgress: fraction,
+              isDownloaded: isDownloaded,
+            );
+          }
+          notifyListeners();
         },
       );
 
       _activeModel = model;
+      _downloadStatusText = '✅ ${model.name} loaded into neural memory!';
+      _downloadProgressFraction = 1.0;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_activeModelKey, model.id);
       _updateModelProgress(model.id, 1.0, true);
@@ -204,6 +229,7 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
       final errMsg = e.toString().replaceFirst('Exception: ', '');
       _error = errMsg;
       _lastErrorModelId = model.id;
+      _downloadStatusText = 'Error: $errMsg';
       final isAlreadyDownloaded = await _denizen.models.isDownloaded(model.id);
       if (!isAlreadyDownloaded) {
         _updateModelProgress(model.id, 0.0, false);
@@ -215,6 +241,68 @@ class OfflineModelProvider extends ChangeNotifier with WidgetsBindingObserver {
         await WakelockPlus.disable();
       } catch (_) {}
       _downloadingModelId = null;
+      _isContextLoading = false;
+      _downloadProgressFraction = 0.0;
+      notifyListeners();
+    }
+  }
+
+  /// Load an arbitrary user-picked GGUF model file from device storage
+  Future<bool> loadCustomModelFromFile(File file) async {
+    if (!await file.exists()) return false;
+    _error = null;
+    _isContextLoading = true;
+    _downloadStatusText = 'Loading custom model ${file.uri.pathSegments.last}...';
+    notifyListeners();
+
+    try {
+      await WakelockPlus.enable();
+      await _requestModelLoadingPermissions();
+
+      final fileName = file.uri.pathSegments.last;
+      final modelId = 'custom_${fileName.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_').toLowerCase()}';
+
+      final customModel = OfflineModel(
+        id: modelId,
+        name: fileName.replaceAll('.gguf', '').replaceAll('_', ' ').trim(),
+        author: 'Local Storage',
+        size: await file.length(),
+        filename: fileName,
+        quantization: 'GGUF',
+        description: 'Custom model loaded from local storage (${file.path}).',
+        contextSize: 2048,
+        isDownloaded: true,
+        downloadProgress: 1.0,
+        localPath: file.path,
+      );
+
+      final success = await _denizen.models.loadFromFile(file, model: customModel);
+      if (success) {
+        final existingIndex = _models.indexWhere((m) => m.id == modelId);
+        if (existingIndex != -1) {
+          _models[existingIndex] = customModel;
+        } else {
+          _models.insert(0, customModel);
+        }
+        _activeModel = customModel;
+        _downloadStatusText = '✅ ${customModel.name} loaded successfully!';
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_activeModelKey, customModel.id);
+        await _saveModelsToPrefs();
+        notifyListeners();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      final errMsg = e.toString().replaceFirst('Exception: ', '');
+      _error = errMsg;
+      _downloadStatusText = 'Error: $errMsg';
+      debugPrint('❌ Error loading custom model: $e');
+      return false;
+    } finally {
+      try {
+        await WakelockPlus.disable();
+      } catch (_) {}
       _isContextLoading = false;
       notifyListeners();
     }
