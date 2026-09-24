@@ -62,7 +62,7 @@ class TemplatesModal extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: UEColors.accent.withOpacity(0.15),
+                  color: UEColors.accent.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(TablerIcons.book, color: UEColors.accent, size: 20),
@@ -146,7 +146,7 @@ class TemplatesModal extends StatelessWidget {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: UEColors.accent.withOpacity(0.12),
+                                      color: UEColors.accent.withValues(alpha: 0.12),
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: Text(

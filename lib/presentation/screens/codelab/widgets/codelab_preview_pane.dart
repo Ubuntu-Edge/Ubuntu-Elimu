@@ -182,7 +182,7 @@ class CodeLabPreviewPaneState extends State<CodeLabPreviewPane> {
               decoration: BoxDecoration(
                 color: const Color(0xFF1E293B),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFF38BDF8).withOpacity(0.4)),
+                border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.4)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,

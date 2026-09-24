@@ -162,7 +162,7 @@ class _CodeEditorPaneState extends State<CodeEditorPane> {
           // Ask AI Button
           TextButton.icon(
             style: TextButton.styleFrom(
-              backgroundColor: UEColors.violet.withOpacity(0.15),
+              backgroundColor: UEColors.violet.withValues(alpha: 0.15),
               foregroundColor: UEColors.violet,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -227,7 +227,7 @@ class _CodeEditorPaneState extends State<CodeEditorPane> {
                 decoration: BoxDecoration(
                   color: const Color(0xFF1E2330),
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: UEColors.border.withOpacity(0.5)),
+                  border: Border.all(color: UEColors.border.withValues(alpha: 0.5)),
                 ),
                 child: Text(
                   snippet,

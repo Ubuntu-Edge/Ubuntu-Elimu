@@ -213,7 +213,7 @@ class _CodeLabScreenState extends State<CodeLabScreen> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: UEColors.accent.withOpacity(0.15),
+              color: UEColors.accent.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Icon(TablerIcons.terminal_2, color: UEColors.accent, size: 20),
@@ -296,7 +296,7 @@ class _CodeLabScreenState extends State<CodeLabScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF1E293B),
               foregroundColor: const Color(0xFF38BDF8),
-              side: BorderSide(color: const Color(0xFF38BDF8).withOpacity(0.4)),
+              side: BorderSide(color: const Color(0xFF38BDF8).withValues(alpha: 0.4)),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
@@ -379,7 +379,7 @@ class _CodeLabScreenState extends State<CodeLabScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFF2D1214),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFEF4444).withOpacity(0.5)),
+        border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.5)),
       ),
       child: Row(
         children: [
@@ -400,7 +400,7 @@ class _CodeLabScreenState extends State<CodeLabScreen> {
           const SizedBox(width: 8),
           TextButton.icon(
             style: TextButton.styleFrom(
-              backgroundColor: const Color(0xFFEF4444).withOpacity(0.2),
+              backgroundColor: const Color(0xFFEF4444).withValues(alpha: 0.2),
               foregroundColor: const Color(0xFFF87171),
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/typography.dart';
+import '../../../../models/code_action.dart';
+import '../../../../services/codelab_agent_loop.dart';
 import '../../../../services/codelab_ai_service.dart';
+import 'diff_view_sheet.dart';
 
 class AICoderSheet extends StatefulWidget {
   final String currentCode;
@@ -23,19 +26,22 @@ class AICoderSheet extends StatefulWidget {
 
 class _AICoderSheetState extends State<AICoderSheet> {
   final TextEditingController _promptController = TextEditingController();
+  final CodeLabAgentLoop _agentLoop = CodeLabAgentLoop.instance;
   final CodeLabAIService _aiService = CodeLabAIService.instance;
 
+  final List<AgentLoopUpdate> _loopUpdates = [];
   String _responseAccumulator = '';
   bool _isGenerating = false;
-  String? _extractedHtml;
-  StreamSubscription<String>? _streamSub;
+  String? _stagedCode;
+  List<DiffLine> _currentDiff = [];
+  StreamSubscription? _activeSub;
 
   final List<String> _quickPrompts = [
-    '✨ Add a button that changes the background color',
-    '📱 Build a simple M-Pesa balance checker',
-    '🎨 Create a dark mode toggle button',
+    '🎨 Change button color to glowing emerald green',
+    '📱 Add an M-Pesa transaction fee calculator',
     '⏱️ Add a 10-second countdown timer',
     '💡 Explain how this code works step by step',
+    '🐛 Fix any syntax or runtime bugs',
   ];
 
   @override
@@ -49,7 +55,7 @@ class _AICoderSheetState extends State<AICoderSheet> {
 
   @override
   void dispose() {
-    _streamSub?.cancel();
+    _activeSub?.cancel();
     _promptController.dispose();
     super.dispose();
   }
@@ -60,60 +66,88 @@ class _AICoderSheetState extends State<AICoderSheet> {
 
     setState(() {
       _isGenerating = true;
+      _loopUpdates.clear();
       _responseAccumulator = '';
-      _extractedHtml = null;
+      _stagedCode = null;
+      _currentDiff = [];
     });
 
-    _streamSub?.cancel();
+    _activeSub?.cancel();
 
     if (prompt.toLowerCase().startsWith('explain')) {
-      _streamSub = _aiService.explainCodeStream(codeSnippet: widget.currentCode, specificQuestion: prompt).listen(
-        (token) {
-          setState(() {
-            _responseAccumulator += token;
-          });
-        },
-        onDone: () {
-          setState(() {
-            _isGenerating = false;
-          });
-        },
-        onError: (err) {
-          setState(() {
-            _isGenerating = false;
-            _responseAccumulator = '⚠️ Error: ${err.toString()}';
-          });
-        },
-      );
-    } else {
-      _streamSub = _aiService.generateWebProjectStream(
-        studentPrompt: prompt,
-        currentCode: widget.currentCode,
+      // Explanation mode
+      _activeSub = _aiService.explainCodeStream(
+        codeSnippet: widget.currentCode,
+        specificQuestion: prompt,
       ).listen(
         (token) {
           setState(() {
             _responseAccumulator += token;
           });
         },
-        onDone: () {
-          final html = _aiService.extractHtmlFromResponse(_responseAccumulator);
+        onDone: () => setState(() => _isGenerating = false),
+        onError: (err) => setState(() {
+          _isGenerating = false;
+          _responseAccumulator = '⚠️ Error: $err';
+        }),
+      );
+    } else {
+      // Fast Agentic Delta Loop (Plan -> Act -> Observe)
+      _activeSub = _agentLoop.runEditLoop(
+        prompt: prompt,
+        currentCode: widget.currentCode,
+      ).listen(
+        (update) {
           setState(() {
-            _isGenerating = false;
-            _extractedHtml = html;
+            _loopUpdates.add(update);
+            if (update.finalCode != null) {
+              _stagedCode = update.finalCode;
+            }
+            if (update.deltaResult != null && update.deltaResult!.diff.isNotEmpty) {
+              _currentDiff = update.deltaResult!.diff;
+            }
           });
         },
-        onError: (err) {
-          setState(() {
-            _isGenerating = false;
-            _responseAccumulator = '⚠️ Generation Error: ${err.toString()}';
-          });
-        },
+        onDone: () => setState(() => _isGenerating = false),
+        onError: (err) => setState(() {
+          _isGenerating = false;
+          _loopUpdates.add(AgentLoopUpdate(
+            step: AgentStep.error,
+            message: 'Agent Loop Error: $err',
+          ));
+        }),
       );
     }
   }
 
+  void _openDiffViewer() {
+    if (_stagedCode == null) return;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => DiffViewSheet(
+        diff: _currentDiff,
+        title: _promptController.text,
+        onAccept: () {
+          widget.onApplyCode(_stagedCode!);
+          Navigator.pop(context); // close parent sheet too
+        },
+        onUndo: () {
+          setState(() {
+            _stagedCode = null;
+            _currentDiff = [];
+          });
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final hasUpdates = _loopUpdates.isNotEmpty;
+    final hasTextResponse = _responseAccumulator.isNotEmpty;
+
     return Container(
       height: MediaQuery.of(context).size.height * 0.75,
       padding: EdgeInsets.only(
@@ -148,7 +182,7 @@ class _AICoderSheetState extends State<AICoderSheet> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: UEColors.violet.withOpacity(0.15),
+                  color: UEColors.violet.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(TablerIcons.sparkles, color: UEColors.violet, size: 20),
@@ -158,7 +192,7 @@ class _AICoderSheetState extends State<AICoderSheet> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Elimu AI Code Tutor',
+                    'Elimu Agentic Code Tutor',
                     style: UETypography.spaceGrotesk(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -166,7 +200,7 @@ class _AICoderSheetState extends State<AICoderSheet> {
                     ),
                   ),
                   Text(
-                    '100% On-Device Pair Programmer',
+                    'On-Device Delta Editing & Runtime Verification',
                     style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
                   ),
                 ],
@@ -179,9 +213,10 @@ class _AICoderSheetState extends State<AICoderSheet> {
             ],
           ),
           const SizedBox(height: 12),
+
           // Quick prompt chips
-          if (_responseAccumulator.isEmpty && !_isGenerating) ...[
-            Text('Quick Ideas:', style: UETypography.inter(fontSize: 12, color: UEColors.textMuted)),
+          if (!hasUpdates && !hasTextResponse && !_isGenerating) ...[
+            Text('Quick Instructions:', style: UETypography.inter(fontSize: 12, color: UEColors.textMuted)),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -209,9 +244,71 @@ class _AICoderSheetState extends State<AICoderSheet> {
               }).toList(),
             ),
           ],
-          // Response Display Area
-          if (_responseAccumulator.isNotEmpty || _isGenerating) ...[
-            const SizedBox(height: 12),
+
+          // Agent Loop Step Pipeline Display
+          if (hasUpdates) ...[
+            const SizedBox(height: 10),
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF090D14),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: UEColors.border),
+                ),
+                child: ListView.separated(
+                  itemCount: _loopUpdates.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) {
+                    final u = _loopUpdates[index];
+                    return _buildStepRow(u);
+                  },
+                ),
+              ),
+            ),
+            // Actions Toolbar (Diff / Apply)
+            if (_stagedCode != null && !_isGenerating) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  if (_currentDiff.isNotEmpty) ...[
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF38BDF8),
+                        side: const BorderSide(color: Color(0xFF0284C7)),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: _openDiffViewer,
+                      icon: const Icon(Icons.difference_outlined, size: 16),
+                      label: const Text('View Diff', style: TextStyle(fontWeight: FontWeight.w600)),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: UEColors.green,
+                        foregroundColor: const Color(0xFF0F172A),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () {
+                        widget.onApplyCode(_stagedCode!);
+                        Navigator.pop(context);
+                      },
+                      icon: const Icon(TablerIcons.bolt, size: 18),
+                      label: const Text(
+                        'Apply & Test Live ⚡',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ] else if (hasTextResponse) ...[
+            const SizedBox(height: 10),
             Expanded(
               child: Container(
                 padding: const EdgeInsets.all(14),
@@ -221,69 +318,23 @@ class _AICoderSheetState extends State<AICoderSheet> {
                   border: Border.all(color: UEColors.border),
                 ),
                 child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SelectableText(
-                        _responseAccumulator,
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 12.5,
-                          color: Color(0xFFE2E8F0),
-                          height: 1.45,
-                        ),
-                      ),
-                      if (_isGenerating) ...[
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: UEColors.violet),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Thinking & Coding offline...',
-                              style: UETypography.inter(fontSize: 11, color: UEColors.violet),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ],
+                  child: SelectableText(
+                    _responseAccumulator,
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 12.5,
+                      color: Color(0xFFE2E8F0),
+                      height: 1.45,
+                    ),
                   ),
                 ),
               ),
             ),
-            // Apply Code Button
-            if (_extractedHtml != null && !_isGenerating) ...[
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: UEColors.green,
-                    foregroundColor: const Color(0xFF0F172A),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  onPressed: () {
-                    widget.onApplyCode(_extractedHtml!);
-                    Navigator.pop(context);
-                  },
-                  icon: const Icon(TablerIcons.code_plus, size: 18),
-                  label: const Text(
-                    'Apply Code to Editor & Run 🚀',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ),
-            ],
           ] else
             const Spacer(),
 
           const SizedBox(height: 12),
-          // Input Box
+          // Prompt Input Box
           Row(
             children: [
               Expanded(
@@ -298,7 +349,7 @@ class _AICoderSheetState extends State<AICoderSheet> {
                     controller: _promptController,
                     style: const TextStyle(color: Colors.white, fontSize: 13.5),
                     decoration: const InputDecoration(
-                      hintText: 'What should we build or change?',
+                      hintText: 'e.g. "make button green", "add audio on click"',
                       hintStyle: TextStyle(color: UEColors.textMuted, fontSize: 13),
                       border: InputBorder.none,
                     ),
@@ -325,6 +376,56 @@ class _AICoderSheetState extends State<AICoderSheet> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildStepRow(AgentLoopUpdate u) {
+    IconData icon;
+    Color iconColor;
+
+    switch (u.step) {
+      case AgentStep.thinking:
+        icon = TablerIcons.brain;
+        iconColor = UEColors.violet;
+        break;
+      case AgentStep.actionProposed:
+        icon = TablerIcons.tools;
+        iconColor = const Color(0xFF38BDF8);
+        break;
+      case AgentStep.deltaApplied:
+        icon = TablerIcons.git_commit;
+        iconColor = const Color(0xFFFBBF24);
+        break;
+      case AgentStep.verifyingRuntime:
+        icon = TablerIcons.device_laptop;
+        iconColor = const Color(0xFFA78BFA);
+        break;
+      case AgentStep.success:
+        icon = TablerIcons.circle_check;
+        iconColor = UEColors.green;
+        break;
+      case AgentStep.error:
+        icon = TablerIcons.alert_triangle;
+        iconColor = const Color(0xFFF87171);
+        break;
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: iconColor),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            u.message,
+            style: TextStyle(
+              fontSize: 12.5,
+              color: u.step == AgentStep.error ? const Color(0xFFFCA5A5) : UEColors.textPrimary,
+              fontWeight: u.step == AgentStep.success ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
