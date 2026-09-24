@@ -8,6 +8,7 @@ import '../../providers/navigation_provider.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/tutor/tutor_screen.dart';
 import '../screens/library/library_screen.dart';
+import '../screens/codelab/codelab_screen.dart';
 import '../screens/research/research_screen.dart';
 import '../screens/settings/settings_screen.dart';
 
@@ -33,6 +34,7 @@ class MainShell extends StatelessWidget {
                     HomeScreen(),
                     LibraryScreen(),
                     TutorScreen(),
+                    CodeLabScreen(),
                     ResearchScreen(),
                     SettingsScreen(),
                   ],
@@ -73,6 +75,7 @@ class _BottomNav extends StatelessWidget {
     _BottomNavItem(icon: Icons.home_rounded, label: 'Home'),
     _BottomNavItem(icon: Icons.folder_copy_outlined, label: 'Library'),
     _BottomNavItem(icon: Icons.chat_bubble_outline_rounded, label: 'Tutor'),
+    _BottomNavItem(icon: Icons.terminal_rounded, label: 'CodeLab'),
     _BottomNavItem(icon: Icons.auto_awesome_rounded, label: 'Research'),
     _BottomNavItem(icon: Icons.settings_outlined, label: 'Settings'),
   ];

@@ -14,11 +14,11 @@ class QuickActionGrid extends StatelessWidget {
 
     final List<_ActionItem> items = [
       _ActionItem(
-        icon: TablerIcons.folder,
-        label: 'Library Docs',
-        sub: 'PDF, PPTX, DOCX',
+        icon: TablerIcons.terminal_2,
+        label: 'CodeLab STEM',
+        sub: 'HTML, JS & Chrome',
         isViolet: false,
-        onTap: () => navProvider.setIndex(1),
+        onTap: () => navProvider.setIndex(3),
       ),
       _ActionItem(
         icon: TablerIcons.bolt,
@@ -28,18 +28,25 @@ class QuickActionGrid extends StatelessWidget {
         onTap: () => navProvider.setIndex(2),
       ),
       _ActionItem(
+        icon: TablerIcons.folder,
+        label: 'Library Docs',
+        sub: 'PDF, PPTX, DOCX',
+        isViolet: false,
+        onTap: () => navProvider.setIndex(1),
+      ),
+      _ActionItem(
         icon: TablerIcons.world_search,
         label: 'AI Research',
         sub: 'ChatGPT style Q&A',
-        isViolet: false,
-        onTap: () => navProvider.setIndex(3),
+        isViolet: true,
+        onTap: () => navProvider.setIndex(4),
       ),
       _ActionItem(
         icon: TablerIcons.settings,
         label: 'Settings',
         sub: 'Models & Engine',
-        isViolet: true,
-        onTap: () => navProvider.setIndex(4),
+        isViolet: false,
+        onTap: () => navProvider.setIndex(5),
       ),
     ];
 
