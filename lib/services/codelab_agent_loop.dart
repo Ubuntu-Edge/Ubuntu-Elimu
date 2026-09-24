@@ -34,6 +34,9 @@ class CodeLabAgentLoop {
   final OfflineAIService _aiService = OfflineAIService.instance;
   final LocalCodeServer _server = LocalCodeServer.instance;
 
+  /// Max times we'll ask the model to fix its own malformed JSON before giving up.
+  static const int _maxParseRetries = 2;
+
   /// Runs the agentic edit loop for a student's prompt against [currentCode].
   Stream<AgentLoopUpdate> runEditLoop({
     required String prompt,
@@ -50,7 +53,7 @@ class CodeLabAgentLoop {
       return;
     }
 
-    // Step 1: Formulate Structured Delta Request
+    // Step 1: Formulate Structured Delta Request (with retry-on-invalid-JSON)
     const systemPrompt = '''You are an on-device code editing agent.
 The user wants to make a specific change to an existing HTML/CSS/JS file.
 Instead of rewriting the whole file, output a single JSON action object to apply a surgical edit.
@@ -80,32 +83,69 @@ Requested Change:
 
 Output the JSON action now:''';
 
-    String accumulatedOutput = '';
-    try {
-      final stream = _aiService.generateResponseStream(
-        prompt: userMessage,
-        systemPrompt: systemPrompt,
-        maxTokens: 300,
-        temperature: 0.1,
-      );
+    CodeAction? action;
+    String lastRawOutput = '';
+    String? lastParseError;
 
-      await for (final token in stream) {
-        accumulatedOutput += token;
+    for (var attempt = 0; attempt <= _maxParseRetries; attempt++) {
+      final isRetry = attempt > 0;
+
+      if (isRetry) {
+        yield AgentLoopUpdate(
+          step: AgentStep.thinking,
+          message: 'Response wasn\'t valid JSON — asking the model to correct it (attempt $attempt/$_maxParseRetries)...',
+        );
       }
-    } catch (e) {
-      yield AgentLoopUpdate(
-        step: AgentStep.error,
-        message: 'LLM Generation Error: $e',
-      );
-      return;
+
+      final requestPrompt = isRetry
+          ? '''Your previous response could not be parsed as valid JSON.
+
+Your previous response:
+$lastRawOutput
+
+Parse error: $lastParseError
+
+Return ONLY a single valid JSON action object for this request, with no prose, no markdown fences unless closed properly, and no trailing commas:
+"$prompt"'''
+          : userMessage;
+
+      String accumulatedOutput = '';
+      try {
+        final stream = _aiService.generateResponseStream(
+          prompt: requestPrompt,
+          systemPrompt: systemPrompt,
+          maxTokens: 300,
+          temperature: 0.1,
+        );
+
+        await for (final token in stream) {
+          accumulatedOutput += token;
+        }
+      } catch (e) {
+        yield AgentLoopUpdate(
+          step: AgentStep.error,
+          message: 'LLM Generation Error: $e',
+        );
+        return;
+      }
+
+      lastRawOutput = accumulatedOutput;
+
+      final parseAttempt = _tryParseAction(accumulatedOutput);
+      if (parseAttempt.action != null) {
+        action = parseAttempt.action;
+        break;
+      }
+
+      lastParseError = parseAttempt.error;
+      debugPrint('Parse attempt $attempt failed: $lastParseError');
     }
 
-    // Step 2: Parse Action
-    final action = _parseAction(accumulatedOutput);
     if (action == null) {
       yield AgentLoopUpdate(
         step: AgentStep.error,
-        message: 'Could not parse structured edit action from response: $accumulatedOutput',
+        message: 'Could not get a valid edit after ${_maxParseRetries + 1} attempts. '
+            'Last response: ${_truncateForDisplay(lastRawOutput)}',
       );
       return;
     }
@@ -188,56 +228,191 @@ Output the JSON action now:''';
 Write a complete, single-file HTML5 project with CSS and JS for the student's request.
 Return JSON: {"action": "full_scaffold", "html": "<complete html>"}''';
 
-    String raw = '';
-    try {
-      final stream = _aiService.generateResponseStream(
-        prompt: 'Build project: "$prompt"',
-        systemPrompt: systemPrompt,
-        maxTokens: 800,
-        temperature: 0.3,
-      );
+    String lastRaw = '';
+    String? lastParseError;
+    CodeAction? action;
 
-      await for (final token in stream) {
-        raw += token;
+    for (var attempt = 0; attempt <= _maxParseRetries; attempt++) {
+      final isRetry = attempt > 0;
+
+      if (isRetry) {
+        yield AgentLoopUpdate(
+          step: AgentStep.thinking,
+          message: 'Response wasn\'t valid JSON — asking the model to correct it (attempt $attempt/$_maxParseRetries)...',
+        );
       }
-    } catch (e) {
-      yield AgentLoopUpdate(step: AgentStep.error, message: 'Scaffold error: $e');
-      return;
+
+      final requestPrompt = isRetry
+          ? '''Your previous response could not be parsed as valid JSON.
+
+Your previous response:
+$lastRaw
+
+Parse error: $lastParseError
+
+Return ONLY {"action": "full_scaffold", "html": "<complete html>"} with no prose and properly escaped HTML, for:
+"$prompt"'''
+          : 'Build project: "$prompt"';
+
+      String raw = '';
+      try {
+        final stream = _aiService.generateResponseStream(
+          prompt: requestPrompt,
+          systemPrompt: systemPrompt,
+          maxTokens: 800,
+          temperature: isRetry ? 0.1 : 0.3, // tighten up on retry to favor valid structure over creativity
+        );
+
+        await for (final token in stream) {
+          raw += token;
+        }
+      } catch (e) {
+        yield AgentLoopUpdate(step: AgentStep.error, message: 'Scaffold error: $e');
+        return;
+      }
+
+      lastRaw = raw;
+
+      final parseAttempt = _tryParseAction(raw);
+      if (parseAttempt.action is FullScaffoldAction) {
+        action = parseAttempt.action;
+        break;
+      }
+
+      // Even without valid JSON, a raw HTML block is a usable fallback —
+      // only keep retrying if we can't even extract HTML from the response.
+      final extracted = _extractHtml(raw);
+      if (extracted.trim().isNotEmpty && _looksLikeHtml(extracted)) {
+        _server.updateCode(extracted);
+        yield AgentLoopUpdate(
+          step: AgentStep.success,
+          message: 'Project scaffolded successfully! 🚀',
+          finalCode: extracted,
+        );
+        return;
+      }
+
+      lastParseError = parseAttempt.error ?? 'No usable HTML found in response.';
+      debugPrint('Scaffold parse attempt $attempt failed: $lastParseError');
     }
 
-    final action = _parseAction(raw);
     if (action is FullScaffoldAction) {
-      _server.updateCode(action.html);
-      yield AgentLoopUpdate(
-        step: AgentStep.success,
-        message: 'Project scaffolded successfully! 🚀',
-        action: action,
-        finalCode: action.html,
-      );
-    } else {
-      // Fallback extract HTML directly
-      final html = _extractHtml(raw);
+      final html = action.html;
       _server.updateCode(html);
       yield AgentLoopUpdate(
         step: AgentStep.success,
         message: 'Project scaffolded successfully! 🚀',
+        action: action,
         finalCode: html,
       );
+      return;
     }
+
+    yield AgentLoopUpdate(
+      step: AgentStep.error,
+      message: 'Could not generate a working project after ${_maxParseRetries + 1} attempts. '
+          'Last response: ${_truncateForDisplay(lastRaw)}',
+    );
   }
 
-  CodeAction? _parseAction(String text) {
+  /// Action type strings CodeAction.fromJson recognizes explicitly.
+  /// fromJson's `default` branch silently treats anything else as a full
+  /// scaffold, so we validate the declared type ourselves first rather than
+  /// trusting that fallback — an unrecognized type should be a parse
+  /// failure (and trigger a retry), not a silent, likely-empty scaffold.
+  static const _knownActionTypes = {
+    'search_replace', 'replace_text',
+    'insert_after', 'insert_code',
+    'replace_lines',
+    'full_scaffold', 'full_rewrite',
+  };
+
+  /// Attempts to parse an action from raw model output.
+  /// Returns both the parsed action (if any) and a human-readable error for retry prompting.
+  _ParseAttempt _tryParseAction(String text) {
     try {
       final jsonBlock = RegExp(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', caseSensitive: false);
       final match = jsonBlock.firstMatch(text);
-      final rawJson = match != null ? match.group(1)! : text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
+
+      String rawJson;
+      if (match != null) {
+        rawJson = match.group(1)!;
+      } else {
+        final start = text.indexOf('{');
+        final end = text.lastIndexOf('}');
+        if (start == -1 || end == -1 || end <= start) {
+          return _ParseAttempt(null, 'No JSON object found in response.');
+        }
+        rawJson = text.substring(start, end + 1);
+      }
 
       final Map<String, dynamic> parsed = jsonDecode(rawJson);
-      return CodeAction.fromJson(parsed);
+
+      final declaredType = (parsed['action'] ?? parsed['tool'] ?? parsed['type'])?.toString();
+      if (declaredType == null || !_knownActionTypes.contains(declaredType)) {
+        return _ParseAttempt(
+          null,
+          'Unrecognized or missing "action" type: ${declaredType ?? "(none)"}. '
+          'Expected one of: ${_knownActionTypes.join(", ")}.',
+        );
+      }
+
+      final action = CodeAction.fromJson(parsed);
+      final validationError = _validateAction(action);
+      if (validationError != null) {
+        return _ParseAttempt(null, validationError);
+      }
+
+      return _ParseAttempt(action, null);
     } catch (e) {
-      debugPrint('JSON parse fallback: $e');
-      return null;
+      return _ParseAttempt(null, 'JSON decode error: $e');
     }
+  }
+
+  /// CodeAction.fromJson fills missing fields with empty strings rather than
+  /// failing, so a structurally-valid-but-empty action (e.g. a
+  /// search_replace with no target) would otherwise sail through as
+  /// "success" while doing nothing or corrupting the code. Catch that here.
+  String? _validateAction(CodeAction action) {
+    switch (action) {
+      case SearchReplaceAction(:final target):
+        if (target.trim().isEmpty) {
+          return 'search_replace action is missing a "target" string to match against.';
+        }
+        return null;
+      case InsertAfterAction(:final anchor, :final code):
+        if (anchor.trim().isEmpty) {
+          return 'insert_after action is missing an "anchor" string.';
+        }
+        if (code.trim().isEmpty) {
+          return 'insert_after action has no "code" to insert.';
+        }
+        return null;
+      case ReplaceLinesAction(:final code, :final startLine, :final endLine):
+        if (code.trim().isEmpty) {
+          return 'replace_lines action has no replacement "code".';
+        }
+        if (endLine < startLine) {
+          return 'replace_lines action has end line ($endLine) before start line ($startLine).';
+        }
+        return null;
+      case FullScaffoldAction(:final html):
+        if (html.trim().isEmpty) {
+          return 'full_scaffold action returned empty "html".';
+        }
+        return null;
+    }
+  }
+
+  bool _looksLikeHtml(String text) {
+    final lower = text.toLowerCase();
+    return lower.contains('<html') || lower.contains('<!doctype') || lower.contains('<body') || lower.contains('<div');
+  }
+
+  String _truncateForDisplay(String text, {int maxLen = 160}) {
+    final trimmed = text.trim();
+    if (trimmed.length <= maxLen) return trimmed;
+    return '${trimmed.substring(0, maxLen)}…';
   }
 
   String _describeAction(CodeAction action) {
@@ -258,4 +433,10 @@ Return JSON: {"action": "full_scaffold", "html": "<complete html>"}''';
     final match = block.firstMatch(raw);
     return match != null ? match.group(1)!.trim() : raw.trim();
   }
+}
+
+class _ParseAttempt {
+  final CodeAction? action;
+  final String? error;
+  const _ParseAttempt(this.action, this.error);
 }
