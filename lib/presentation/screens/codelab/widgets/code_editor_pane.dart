@@ -8,12 +8,14 @@ class CodeEditorPane extends StatefulWidget {
   final TextEditingController controller;
   final VoidCallback onRun;
   final VoidCallback onAskAi;
+  final String? emptyStateHint;
 
   const CodeEditorPane({
     super.key,
     required this.controller,
     required this.onRun,
     required this.onAskAi,
+    this.emptyStateHint,
   });
 
   @override
@@ -106,12 +108,12 @@ class _CodeEditorPaneState extends State<CodeEditorPane> {
                           color: Color(0xFFE2E8F0),
                           letterSpacing: 0.3,
                         ),
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           border: InputBorder.none,
                           isDense: true,
                           contentPadding: EdgeInsets.zero,
-                          hintText: '<!-- Write your HTML/CSS/JS code here -->',
-                          hintStyle: TextStyle(color: UEColors.textDim, fontFamily: 'monospace'),
+                          hintText: widget.emptyStateHint ?? '<!-- Write your HTML/CSS/JS code here -->',
+                          hintStyle: const TextStyle(color: UEColors.textDim, fontFamily: 'monospace'),
                         ),
                       ),
                     ),

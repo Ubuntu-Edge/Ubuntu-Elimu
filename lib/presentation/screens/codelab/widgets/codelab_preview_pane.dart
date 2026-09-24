@@ -101,11 +101,11 @@ class CodeLabPreviewPaneState extends State<CodeLabPreviewPane> {
                   ),
 
                 if (_isLoading && _errorMessage == null)
-                  Positioned(
+                  const Positioned(
                     top: 0,
                     left: 0,
                     right: 0,
-                    child: const LinearProgressIndicator(
+                    child: LinearProgressIndicator(
                       color: UEColors.accent,
                       backgroundColor: Colors.transparent,
                       minHeight: 2,

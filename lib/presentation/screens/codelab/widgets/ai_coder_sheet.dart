@@ -8,6 +8,12 @@ import '../../../../services/codelab_agent_loop.dart';
 import '../../../../services/codelab_ai_service.dart';
 import 'diff_view_sheet.dart';
 
+class _QuickPrompt {
+  final IconData icon;
+  final String label;
+  const _QuickPrompt(this.icon, this.label);
+}
+
 class AICoderSheet extends StatefulWidget {
   final String currentCode;
   final String? initialPrompt;
@@ -36,13 +42,25 @@ class _AICoderSheetState extends State<AICoderSheet> {
   List<DiffLine> _currentDiff = [];
   StreamSubscription? _activeSub;
 
-  final List<String> _quickPrompts = [
-    '🎨 Change button color to glowing emerald green',
-    '📱 Add an M-Pesa transaction fee calculator',
-    '⏱️ Add a 10-second countdown timer',
-    '💡 Explain how this code works step by step',
-    '🐛 Fix any syntax or runtime bugs',
+  bool get _startingFromBlank => widget.currentCode.trim().isEmpty;
+
+  // Prompts that only make sense once code already exists.
+  static const _editOnlyPrompts = <_QuickPrompt>[
+    _QuickPrompt(TablerIcons.palette, 'Change button color to glowing emerald green'),
+    _QuickPrompt(TablerIcons.clock, 'Add a 10-second countdown timer'),
+    _QuickPrompt(TablerIcons.message_circle, 'Explain how this code works step by step'),
+    _QuickPrompt(TablerIcons.bug, 'Fix any syntax or runtime bugs'),
   ];
+
+  // Prompts that work equally well as a starting build.
+  static const _buildPrompts = <_QuickPrompt>[
+    _QuickPrompt(TablerIcons.device_mobile, 'Build an M-Pesa transaction fee calculator'),
+    _QuickPrompt(TablerIcons.clock, 'Build a 10-second countdown timer'),
+    _QuickPrompt(TablerIcons.checklist, 'Build a simple to-do list'),
+    _QuickPrompt(TablerIcons.calculator, 'Build a basic calculator'),
+  ];
+
+  List<_QuickPrompt> get _quickPrompts => _startingFromBlank ? _buildPrompts : _editOnlyPrompts;
 
   @override
   void initState() {
@@ -74,8 +92,8 @@ class _AICoderSheetState extends State<AICoderSheet> {
 
     _activeSub?.cancel();
 
-    if (prompt.toLowerCase().startsWith('explain')) {
-      // Explanation mode
+    if (!_startingFromBlank && prompt.toLowerCase().startsWith('explain')) {
+      // Explanation mode — only reachable when there's code to explain.
       _activeSub = _aiService.explainCodeStream(
         codeSnippet: widget.currentCode,
         specificQuestion: prompt,
@@ -92,7 +110,8 @@ class _AICoderSheetState extends State<AICoderSheet> {
         }),
       );
     } else {
-      // Fast Agentic Delta Loop (Plan -> Act -> Observe)
+      // Fast Agentic Delta Loop (Plan -> Act -> Observe).
+      // With empty currentCode this generates from scratch rather than diffing.
       _activeSub = _agentLoop.runEditLoop(
         prompt: prompt,
         currentCode: widget.currentCode,
@@ -207,7 +226,9 @@ class _AICoderSheetState extends State<AICoderSheet> {
                     ),
                   ),
                   Text(
-                    'On-Device Delta Editing & Runtime Verification',
+                    _startingFromBlank
+                        ? 'Tell me what to build — I\'ll write the code.'
+                        : 'On-Device Delta Editing & Runtime Verification',
                     style: UETypography.inter(fontSize: 11, color: UEColors.textMuted),
                   ),
                 ],
@@ -223,7 +244,10 @@ class _AICoderSheetState extends State<AICoderSheet> {
 
           // Quick prompt chips
           if (!hasUpdates && !hasTextResponse && !_isGenerating) ...[
-            Text('Quick Instructions:', style: UETypography.inter(fontSize: 12, color: UEColors.textMuted)),
+            Text(
+              _startingFromBlank ? 'Try one of these:' : 'Quick Instructions:',
+              style: UETypography.inter(fontSize: 12, color: UEColors.textMuted),
+            ),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -231,7 +255,7 @@ class _AICoderSheetState extends State<AICoderSheet> {
               children: _quickPrompts.map((p) {
                 return InkWell(
                   onTap: () {
-                    _promptController.text = p.substring(2).trim();
+                    _promptController.text = p.label;
                     _submitPrompt();
                   },
                   borderRadius: BorderRadius.circular(20),
@@ -242,9 +266,16 @@ class _AICoderSheetState extends State<AICoderSheet> {
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: UEColors.border),
                     ),
-                    child: Text(
-                      p,
-                      style: const TextStyle(fontSize: 11, color: Color(0xFFC7D2FE)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(p.icon, size: 13, color: const Color(0xFFC7D2FE)),
+                        const SizedBox(width: 6),
+                        Text(
+                          p.label,
+                          style: const TextStyle(fontSize: 11, color: Color(0xFFC7D2FE)),
+                        ),
+                      ],
                     ),
                   ),
                 );
@@ -305,9 +336,9 @@ class _AICoderSheetState extends State<AICoderSheet> {
                         Navigator.pop(context);
                       },
                       icon: const Icon(TablerIcons.bolt, size: 18),
-                      label: const Text(
-                        'Apply & Test Live ⚡',
-                        style: TextStyle(fontWeight: FontWeight.w700),
+                      label: Text(
+                        _startingFromBlank ? 'Build It ⚡' : 'Apply & Test Live ⚡',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),
                   ),
@@ -355,9 +386,11 @@ class _AICoderSheetState extends State<AICoderSheet> {
                   child: TextField(
                     controller: _promptController,
                     style: const TextStyle(color: Colors.white, fontSize: 13.5),
-                    decoration: const InputDecoration(
-                      hintText: 'e.g. "make button green", "add audio on click"',
-                      hintStyle: TextStyle(color: UEColors.textMuted, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: _startingFromBlank
+                          ? 'e.g. "build a countdown timer app"'
+                          : 'e.g. "make button green", "add audio on click"',
+                      hintStyle: const TextStyle(color: UEColors.textMuted, fontSize: 13),
                       border: InputBorder.none,
                     ),
                     onSubmitted: (_) => _submitPrompt(),

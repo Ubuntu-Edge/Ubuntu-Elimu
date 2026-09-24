@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_tabler_icons/flutter_tabler_icons.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
-import '../../../models/codelab_template.dart';
 import '../../../services/local_code_server.dart';
 import 'widgets/ai_coder_sheet.dart';
 import 'widgets/code_editor_pane.dart';
@@ -22,7 +21,7 @@ class _CodeLabScreenState extends State<CodeLabScreen> {
   final GlobalKey<CodeLabPreviewPaneState> _previewKey = GlobalKey<CodeLabPreviewPaneState>();
   final LocalCodeServer _server = LocalCodeServer.instance;
 
-  String _projectTitle = 'My First Web Project';
+  String _projectTitle = 'Untitled Project';
   int _selectedTab = 0; // 0 = Editor, 1 = Preview (for narrow screens)
   String? _lastError;
   StreamSubscription<String>? _errorSub;
@@ -30,16 +29,21 @@ class _CodeLabScreenState extends State<CodeLabScreen> {
   @override
   void initState() {
     super.initState();
-    final defaultTemplate = CodeLabTemplate.cbcCurriculumTemplates.first;
-    _codeController.text = defaultTemplate.code;
-    _projectTitle = defaultTemplate.title;
-
+    // Start blank — no default template pre-loaded.
+    // The user lands straight in "what do you want to build?" mode via
+    // the AI assistant sheet, opened automatically after first frame.
     _startServer();
     _errorSub = _server.errorStream.listen((errorMsg) {
       if (mounted) {
         setState(() {
           _lastError = errorMsg;
         });
+      }
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _codeController.text.isEmpty) {
+        _openAiAssistant();
       }
     });
   }
@@ -91,6 +95,8 @@ class _CodeLabScreenState extends State<CodeLabScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      isDismissible: _codeController.text.isNotEmpty, // don't let a blank project dismiss with nothing built
+      enableDrag: _codeController.text.isNotEmpty,
       builder: (ctx) => AICoderSheet(
         currentCode: _codeController.text,
         initialPrompt: initialPrompt,
@@ -160,6 +166,9 @@ class _CodeLabScreenState extends State<CodeLabScreen> {
                               controller: _codeController,
                               onRun: _runCode,
                               onAskAi: () => _openAiAssistant(),
+                              emptyStateHint: _codeController.text.isEmpty
+                                  ? 'Nothing built yet — tell the AI what to make.'
+                                  : null,
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -183,6 +192,9 @@ class _CodeLabScreenState extends State<CodeLabScreen> {
                               setState(() => _selectedTab = 1); // Switch to preview
                             },
                             onAskAi: () => _openAiAssistant(),
+                            emptyStateHint: _codeController.text.isEmpty
+                                ? 'Nothing built yet — tell the AI what to make.'
+                                : null,
                           ),
                           CodeLabPreviewPane(
                             key: _previewKey,
@@ -331,13 +343,24 @@ class _CodeLabScreenState extends State<CodeLabScreen> {
                   borderRadius: BorderRadius.circular(9),
                 ),
                 child: Center(
-                  child: Text(
-                    '📝 Code Editor',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: _selectedTab == 0 ? Colors.white : UEColors.textSecondary,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        TablerIcons.code,
+                        size: 15,
+                        color: _selectedTab == 0 ? Colors.white : UEColors.textSecondary,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Code Editor',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: _selectedTab == 0 ? Colors.white : UEColors.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -356,13 +379,24 @@ class _CodeLabScreenState extends State<CodeLabScreen> {
                   borderRadius: BorderRadius.circular(9),
                 ),
                 child: Center(
-                  child: Text(
-                    '🌐 Live Preview',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: _selectedTab == 1 ? Colors.white : UEColors.textSecondary,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        TablerIcons.world,
+                        size: 15,
+                        color: _selectedTab == 1 ? Colors.white : UEColors.textSecondary,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Live Preview',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: _selectedTab == 1 ? Colors.white : UEColors.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
