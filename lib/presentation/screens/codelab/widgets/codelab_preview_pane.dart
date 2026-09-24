@@ -120,7 +120,10 @@ class CodeLabPreviewPaneState extends State<CodeLabPreviewPane> {
   }
 
   Widget _buildPreviewBar() {
-    return Container(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 420;
+        return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: const BoxDecoration(
         color: UEColors.surface,
@@ -152,33 +155,43 @@ class CodeLabPreviewPaneState extends State<CodeLabPreviewPane> {
                 children: [
                   const Icon(TablerIcons.lock, size: 12, color: UEColors.green),
                   const SizedBox(width: 6),
-                  Text(
-                    'http://127.0.0.1:${LocalCodeServer.instance.port}',
-                    style: UETypography.inter(
-                      fontSize: 11,
-                      color: UEColors.textSecondary,
+                  Expanded(
+                    child: Text(
+                      'http://127.0.0.1:${LocalCodeServer.instance.port}',
+                      style: UETypography.inter(
+                        fontSize: 11,
+                        color: UEColors.textSecondary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
                     ),
                   ),
                 ],
               ),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 6),
           // Refresh Button
           IconButton(
             icon: const Icon(TablerIcons.refresh, size: 18, color: UEColors.textSecondary),
             tooltip: 'Reload Sandbox',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             onPressed: () {
               widget.onRefresh();
               reload();
             },
           ),
-          // Launch Chrome button
+          const SizedBox(width: 2),
+          // Launch Chrome button — compact on narrow screens
           InkWell(
             onTap: widget.onOpenInChrome,
             borderRadius: BorderRadius.circular(8),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              padding: EdgeInsets.symmetric(
+                horizontal: isNarrow ? 8 : 10,
+                vertical: 6,
+              ),
               decoration: BoxDecoration(
                 color: const Color(0xFF1E293B),
                 borderRadius: BorderRadius.circular(8),
@@ -188,15 +201,17 @@ class CodeLabPreviewPaneState extends State<CodeLabPreviewPane> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(TablerIcons.brand_chrome, size: 16, color: Color(0xFF38BDF8)),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Open in Chrome',
-                    style: UETypography.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF38BDF8),
+                  if (!isNarrow) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      'Open in Chrome',
+                      style: UETypography.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF38BDF8),
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -209,11 +224,15 @@ class CodeLabPreviewPaneState extends State<CodeLabPreviewPane> {
                 size: 18,
                 color: UEColors.textSecondary,
               ),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
               onPressed: widget.onToggleFullscreen,
             ),
           ],
         ],
       ),
+        );
+      },
     );
   }
 

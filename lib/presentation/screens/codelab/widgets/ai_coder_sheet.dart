@@ -148,10 +148,17 @@ class _AICoderSheetState extends State<AICoderSheet> {
     final hasUpdates = _loopUpdates.isNotEmpty;
     final hasTextResponse = _responseAccumulator.isNotEmpty;
 
+    final viewInsets = MediaQuery.of(context).viewInsets;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final keyboardHeight = viewInsets.bottom;
+    // Use up to 85% of available screen height (minus keyboard) so we never overflow
+    final maxSheetHeight = screenHeight * 0.85;
+    final availableHeight = maxSheetHeight - keyboardHeight;
+
     return Container(
-      height: MediaQuery.of(context).size.height * 0.75,
+      height: availableHeight.clamp(300.0, maxSheetHeight),
       padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        bottom: keyboardHeight > 0 ? 8 : 16,
         left: 20,
         right: 20,
         top: 16,
